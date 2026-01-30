@@ -3107,58 +3107,51 @@ out += "몬스터볼: " + target.ball + " | 슈퍼볼: " + target.superBall + " 
     commitSave(false);
     return;
   }
-  if (msg.indexOf("/내포켓몬") === 0) {
-    var t = getTargetFromMsg(d, sender, msg, "/내포켓몬");
+  // -------------------- [수정] 본인 포켓몬 조회 --------------------
+  if (msg === "/내포켓몬") {
+    if (!u.pokemons || u.pokemons.length === 0) {
+      replier.reply(sender + "님은 보유한 포켓몬이 없습니다.");
+      return;
+    }
+    var summary = "🎒 " + sender + "님의 보유 포켓몬\n" + "총 " + u.pokemons.length + "마리\n\n" + "전체보기로 목록을 확인하세요.";
+    var full = "\n\n[보유 포켓몬 목록]\n\n";
+    var sorted = sortPokemonsByPower(u.pokemons);
+    for (var i = 0; i < sorted.length; i++) {
+      var p = sorted[i];
+      var power = calcBattlePower(p);
+      var dbp = findPokemonDB(p.pid);
+      var name = dbp ? dbp.name : "알수없음";
+      var enh = p.enh ? (p.enh + "강") : "0강";
+      full += (i + 1) + ". #" + p.uid + " " + name + " " + enh + " | 전투력 " + power + "\n";
+    }
+    replyFold(replier, summary, full);
+    return;
+  }
+
+  // -------------------- [신설] 타인 포켓몬 조회 --------------------
+  if (msg.indexOf("/포켓몬") === 0) {
+    var t = getTargetFromMsg(d, sender, msg, "/포켓몬");
     if (!t) {
-      replier.reply("해당 유저를 찾을 수 없습니다.");
+      replier.reply("조회할 유저의 닉네임을 입력해주세요.\n예: /포켓몬 손사장");
       return;
     }
     var target = t.user;
     var targetName = t.name;
+
     if (!target.pokemons || target.pokemons.length === 0) {
       replier.reply(targetName + "님은 보유한 포켓몬이 없습니다.");
       return;
     }
-    var summary = targetName + "님의 보유 포켓몬\n" + "총 " + target.pokemons.length + "마리\n\n" + "전체보기로 목록을 확인하세요.";
-    var full = "\n\n[보유 포켓몬 목록]\n\n";
+    var summary = "🔍 " + targetName + "님의 보유 포켓몬\n" + "총 " + target.pokemons.length + "마리\n\n" + "전체보기로 목록을 확인하세요.";
+    var full = "\n\n[" + targetName + "님의 포켓몬 목록]\n\n";
     var sorted = sortPokemonsByPower(target.pokemons);
     for (var i = 0; i < sorted.length; i++) {
       var p = sorted[i];
       var power = calcBattlePower(p);
       var dbp = findPokemonDB(p.pid);
       var name = dbp ? dbp.name : "알수없음";
-      var enh = p.enh ? (p.enh + "강") : "";
+      var enh = p.enh ? (p.enh + "강") : "0강";
       full += (i + 1) + ". #" + p.uid + " " + name + " " + enh + " | 전투력 " + power + "\n";
-    }
-    replyFold(replier, summary, full);
-    return;
-  }
-  if (msg.indexOf("/도감") === 0) {
-    var t = getTargetFromMsg(d, sender, msg, "/도감");
-    if (!t) {
-      replier.reply("해당 유저를 찾을 수 없습니다.");
-      return;
-    }
-    var target = t.user;
-    var targetName = t.name;
-    ensureUserDex(target);
-    var total = POKEMON_DB.length;
-    var uniqueCaught = 0;
-    for (var i = 0; i < POKEMON_DB.length; i++) {
-      var id = String(POKEMON_DB[i].id);
-      if (target.dex[id] && target.dex[id].caught > 0) 
-        uniqueCaught++;
-    }
-    var rate = Math.floor((uniqueCaught / total) * 1000) / 10;
-    var summary = targetName + "님의 포켓몬 도감\n\n" + "획득: " + uniqueCaught + " / " + total + " (" + rate + "%)\n\n" + "전체보기로 상세 목록을 확인하세요.";
-    var full = "\n\n[도감 목록]\n\n";
-    for (var j = 0; j < POKEMON_DB.length; j++) {
-      var pp = POKEMON_DB[j];
-      var rec = target.dex[String(pp.id)] || {
-  seen: 0, 
-  caught: 0};
-      var mark = rec.caught ? "✔" : rec.seen ? "👀" : "□";
-      full += mark + " #" + pp.id + " " + pp.name + "\n";
     }
     replyFold(replier, summary, full);
     return;
@@ -3318,8 +3311,8 @@ if (msg.indexOf("/판매") === 0) {
   full += "/정보 닉네임\n";
   full += "예: /정보 손사장\n";
   full += "/내포켓몬\n";
-  full += "/내포켓몬 닉네임\n";
-  full += "예: /내포켓몬 손사장\n";
+  full += "/포켓몬 닉네임\n";
+  full += "예: /포켓몬 손사장\n";
   full += "/도감\n";
   full += "/도감 닉네임\n";
   full += "예: /도감 손사장\n\n";
