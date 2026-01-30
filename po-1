@@ -3652,7 +3652,10 @@ return; }
                (extraLog ? extraLog : "주변에 특별한 물건은 보이지 않습니다.\n") +
                pokeLog;
 
-    replier.reply(header + "\n" + body);
+var summary = header + "\n" + "📍 지역: " + region2 + " 탐험 완료!";
+    var full = body; 
+    
+    replyFold(replier, summary, full);
     return;
   }
   if (msg === "/전적") {
