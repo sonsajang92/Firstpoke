@@ -39,7 +39,7 @@ var DATA_PATH = "/sdcard/mbot_pokemon_db.json";
 var MAX_LV = 150;
 var ENHANCE_MAX = 30;
 var FIELD_COOLDOWN_MS = 10 * 1000;// /필드 10초
-var EXPLORE_COOLDOWN_MS = 55 * 1000;// /탐험 55초
+var EXPLORE_COOLDOWN_MS = 1 * 1000;// /탐험 55초
 var ENHANCE_COOLDOWN_MS = 4 * 1000;// /강화 4초
 var BATTLE_COOLDOWN_MS = 15 * 1000;// /배틀 15초
 var ACTIVE_TTL_MS = 6 * 60 * 60 * 1000;// 6시간 이내 채팅한 유저만 배틀 매칭
@@ -2022,7 +2022,7 @@ var REGIONS = [{
   key: "연구소", 
   types: ["에스퍼", "강철", "노말"]}, {
   key: "용의둥지", 
-  types: ["드래곤", "드래곤", "불"]}
+  types: ["드래곤", "드래곤", "불"]},
 { key: "냥치의 방", types: [] }
 ];
 var REGION_ROTATE_MS = 60 * 60 * 1000;// (원하면 남겨도 되고 안 써도 됨)
@@ -3299,7 +3299,7 @@ if (msg.indexOf("/판매") === 0) {
  if (msg === "/도움") {
   var summary = "죠봇 포켓몬 명령어\n\n";
   summary += "자주 쓰는 명령어\n";
-  summary += "/필드 /몬 /슈 /하 /도망\n";
+  summary += "/필드 /몬 /슈 /하 /도망(/ㅌㅌ)\n";
   summary += "/내포켓몬 /강화 /도파민\n";
   summary += "/상점 /구매 /판매\n";
   summary += "/배틀 /전적 /랭킹\n";
@@ -3324,7 +3324,7 @@ if (msg.indexOf("/판매") === 0) {
   full += "/몬스터볼 또는 /몬 또는 /ㅁ\n";
   full += "/슈퍼볼 또는 /슈 또는 /ㅅ\n";
   full += "/하이퍼볼 또는 /하 또는 /ㅎ\n";
-  full += "/도망\n\n";
+  full += "/도망(/ㅌㅌ)\n\n";
 
   full += "탐험 / 성장\n";
   full += "/탐험\n";
@@ -3385,7 +3385,16 @@ if (msg.indexOf("/판매") === 0) {
     }
     return;
   }
+    // -------------------- [수정] 필드 시스템 (중복 방지 및 냥치의방 제외) --------------------
   if (msg === "/필드") {
+    // 1. 현재 필드에 이미 포켓몬이 있는지 확인
+    var currentWild = getWild(d, room);
+    if (currentWild) {
+      var dbWild = findPokemonDB(currentWild.pid);
+      replier.reply("⚠️ 이미 필드에 " + dbWild.name + "가 나타나 있습니다!\n포획하시거나 /도망(/ㅌㅌ) 후에 다시 탐색해주세요.");
+      return;
+    }
+
     var now = nowMs();
     if (now - u.lastFieldAt < FIELD_COOLDOWN_MS) {
       var remain = FIELD_COOLDOWN_MS - (now - u.lastFieldAt);
@@ -3394,51 +3403,61 @@ if (msg.indexOf("/판매") === 0) {
       return;
     }
     u.lastFieldAt = now;
-    // 필드 로직 계속
+
     var region = getRoomRegion(d, room);
+    var safetyNet = 0;
+    while (region === "냥치의 방" && safetyNet < 10) {
+      region = getRoomRegion(d, room);
+      safetyNet++;
+    }
+    if (region === "냥치의 방") region = REGIONS[0].key;
+
     var wild = spawnPokemonForRegion(region);
     setWild(d, room, wild.id);
-    // ✅ 만남 횟수 +1
     dexSeen(u, wild.id);
     commitSave(true);
+
     var dbw = findPokemonDB(wild.id);
     var rareLine = "";
     if (dbw && dbw.rarity === 5) {
       rareLine = sayDo(sender, pick(EMPHASIS_RARE5)) + "\n" + pick(EMPHASIS_LEGENDARY) + "\n\n";
     }
-    var intro = pick(FIELD_SEARCH_LINES);
-    var meet = pick(FIELD_ENCOUNTER_LINES);
+    
     var ballLine = "🎒 보유 볼\n" + "- 몬스터볼: " + u.ball + "\n" + "- 슈퍼볼: " + u.superBall + "\n" + "- 하이퍼볼: " + u.ultraBall + "\n\n";
-    // ✅ 가이드(짧은 커맨드)
-    var guide = "🎯 포획: /몬(/ㅁ) /슈(/ㅅ) /하(/ㅎ)\n" + "🏃 도망: /도망\n" + "⏳ " + Math.floor(SPAWN_EXPIRE_MS / 1000) + "초 안에 선택";
-    replier.reply(sayDo(sender, intro) + "\n\n" + "[지역: " + region + "]\n\n" + "⚡ " + sayDo(sender, dbw.name + " 와(과) 마주쳤어요!") + "\n" + meet + "\n\n" + ballLine + guide);
+    var guide = "🎯 포획: /몬(/ㅁ), /슈(/ㅅ), /하(/ㅎ)\n" + "🏃 도망: /도망(/ㅌㅌ)\n" + "⏳ " + Math.floor(SPAWN_EXPIRE_MS / 1000) + "초 안에 선택";
+    
+    replier.reply(sayDo(sender, pick(FIELD_SEARCH_LINES)) + "\n\n" + "[지역: " + region + "]\n\n" + rareLine + "⚡ " + sayDo(sender, dbw.name + " 와(과) 마주쳤어요!") + "\n" + pick(FIELD_ENCOUNTER_LINES) + "\n\n" + ballLine + guide);
     return;
   }
-  if (msg === "/도망") {
-    var w = getWild(d, room);
-    // 지금 활성 야생이 없으면: 이미 만료된 것만 남아있는지 체크
-    if (!w) {
-      var ex = takeExpiredWild(d, room);
-      if (ex) {
-        var dbx = findPokemonDB(ex.pid);
-        var nm = dbx ? dbx.name : "야생 포켓몬";
-        commitSave(true);
-        replier.reply(nm + "는 이미 사라졌습니다.\n'/필드' 로 다시 탐색해 주세요.");
-        return;
-      }
-      replier.reply("도망칠 야생 포켓몬이 없습니다.\n'/필드' 로 탐색해 주세요.");
+  
+     // -------------------- [교정] 도망 시스템 (/ㅌㅌ 통합 및 안전 장치) --------------------
+  if (msg === "/도망" || msg === "/ㅌㅌ") {
+    // 1. 현재 방의 야생 포켓몬 데이터 가져오기
+    var targetW = d.lastSpawnByRoom[room];
+
+    // 2. 데이터가 없거나 이미 만료/도망 상태인지 체크
+    if (!targetW || targetW.expired) {
+      replier.reply("필드에 마주친 포켓몬이 없거나 이미 사라졌습니다.");
       return;
     }
-    d.lastSpawnByRoom[room] = {
-  expired: true, 
-  pid: w.pid, 
-  byEscape: true};
+
+    // 3. DB에서 이름 찾기 (targetW.pid 사용)
+    var dbw3 = findPokemonDB(targetW.pid);
+    
+    // 🌟 [핵심 수정] dbw3가 없을 경우를 대비한 기본값 설정 (오류 방지)
+    var pName = (dbw3 && dbw3.name) ? dbw3.name : "야생 포켓몬";
+
+    // 4. 필드 데이터 확실히 삭제 (clearWild 역할)
+    delete d.lastSpawnByRoom[room];
+    
+    // 5. 변경사항 저장
     commitSave(true);
-    var dbw = findPokemonDB(w.pid);
-    var name = dbw ? dbw.name : "야생 포켓몬";
-    replier.reply(blockTitle("도망 성공") + "🏃 " + sayDo(sender, name + "에게서 무사히 도망쳤어요!") + "\n\n" + "다시 탐색: /필드");
+
+    // 6. 결과 전송 (안전하게 처리된 pName 사용)
+    replier.reply(sayDo(sender, pName + "에게서 무사히 도망쳤습니다! 🏃💨"));
     return;
   }
+   
   function handleCatch(ballType, ballName) {
   var wild = getWild(d, room);
 
@@ -3590,7 +3609,15 @@ return; }
     }
     u.lastExploreAt = now2;
 
-    var region2 = getRoomRegion(d, room); 
+    // 탐험에서 냥치의 방이 10% 확률로만 나오게 하고 싶을 때
+var region2;
+if (Math.random() < 0.10) {
+  region2 = "냥치의 방";
+} else {
+  region2 = getRoomRegion(d, room);
+  while(region2 === "냥치의 방") region2 = getRoomRegion(d, room); // 일반 지역만 뽑기
+}
+    
     var gainGold = calcExploreGold(u);
     var gainExp = calcExploreExp();
     var extraLog = "";
@@ -3608,7 +3635,7 @@ return; }
       // 🐱 냥치의 방: 골드 대폭 상향 및 높은 아이템 확률
       var goldBonus = randInt(55555, 123456); 
       gainGold += goldBonus;
-      extraLog = "🐱【냥치의 방 발견!】탐험하다보니 냥치의 방에 도달했습니다!\n\n💰 냥치에게서 훔친 돈: " + fmtNum(goldBonus) + "💰\n";
+      extraLog = "🐱 【냥치의 방 발견!】\n탐험하다보니 냥치의 방에 도달했습니다!\n\n💰 냥치에게서 훔친 돈: +" + fmtNum(goldBonus) + "💰\n";
 
       // 냥치의 방 아이템 확률: 70% (매우 높음)
       if (Math.random() < 0.70) {
@@ -3652,10 +3679,7 @@ return; }
                (extraLog ? extraLog : "주변에 특별한 물건은 보이지 않습니다.\n") +
                pokeLog;
 
-var summary = header + "\n" + "📍 지역: " + region2 + " 탐험 완료!";
-    var full = body; 
-    
-    replyFold(replier, summary, full);
+    replier.reply(header + "\n" + body);
     return;
   }
   if (msg === "/전적") {
