@@ -2022,7 +2022,9 @@ var REGIONS = [{
   key: "연구소", 
   types: ["에스퍼", "강철", "노말"]}, {
   key: "용의둥지", 
-  types: ["드래곤", "드래곤", "불"]}];
+  types: ["드래곤", "드래곤", "불"]}
+{ key: "냥치의방", types: [] }
+];
 var REGION_ROTATE_MS = 60 * 60 * 1000;// (원하면 남겨도 되고 안 써도 됨)
 var SPAWN_EXPIRE_MS = 60 * 1000;
 function getRoomRegion(d, room) {
@@ -3577,6 +3579,7 @@ return; }
   }
   
   
+// -------------------- [최종 개편] 탐험 시스템 (확률 이원화) --------------------
   if (msg === "/탐험") {
     var now2 = nowMs();
     if (now2 - u.lastExploreAt < EXPLORE_COOLDOWN_MS) {
@@ -3586,27 +3589,70 @@ return; }
       return;
     }
     u.lastExploreAt = now2;
-    var region2 = getRoomRegion(d, room);
-    // 기본 보상은 항상 지급
+
+    var region2 = getRoomRegion(d, room); 
     var gainGold = calcExploreGold(u);
     var gainExp = calcExploreExp();
-    u.gold += gainGold;
-    var lvMsg = addExpWithLevelUpMsg(u, gainExp);
-    // 낮은 확률로만 포켓몬 획득
-    var chance = getExplorePokemonChance(u.trainerLv);
-    var got = (Math.random() < chance);
-    if (got) {
+    var extraLog = "";
+
+    // 1. [아이템 획득 테이블 정의]
+    var itemPool = [
+      { name: "몬스터볼", field: "ball", amt: 1 },
+      { name: "슈퍼볼", field: "superBall", amt: 1 },
+      { name: "하이퍼볼", field: "ultraBall", amt: 1 },
+      { name: "도파민 강화권", field: "dopaTicket", amt: 1 }
+    ];
+
+    // 2. [지역별 특수 로직]
+    if (region2 === "냥치의방") {
+      // 🐱 냥치의 방: 골드 대폭 상향 및 높은 아이템 확률
+      var goldBonus = randInt(55555, 123456); 
+      gainGold += goldBonus;
+      extraLog = "🐱 【냥치의 방 발견!】탐험하다보니 냥치의 방에 도달했습니다!\n💰 냥치에게서 훔친 돈: +" + fmtNum(goldBonus) + "💰\n";
+
+      // 냥치의 방 아이템 확률: 70% (매우 높음)
+      if (Math.random() < 0.70) {
+        var picked = randomPick(itemPool);
+        var bonusAmt = (picked.field === "ball") ? randInt(3, 6) : randInt(1, 2); // 냥치방은 수량도 더 많이
+        u[picked.field] = (u[picked.field] || 0) + bonusAmt;
+        extraLog += "🎁 냥치의 물건: " + picked.name + " " + bonusAmt + "개를 훔쳤습니다!\n\n";
+      }
+    } else {
+      // 🌲 일반 지역 아이템 확률: 8% (낮은 확률로 깜짝 득템)
+      if (Math.random() < 0.08) {
+        var picked = randomPick(itemPool);
+        u[picked.field] = (u[picked.field] || 0) + picked.amt;
+        extraLog = "🎁 탐험 중 바닥에서 무언가 반짝이는 것을 주웠습니다!\n📦 아이템 획득: " + picked.name + " " + picked.amt + "개\n\n";
+      }
+    }
+
+    // 3. [포켓몬 획득 로직] - 모든 지역 공통 (낮은 확률)
+    var pokeChance = getExplorePokemonChance(u.trainerLv);
+    var gotPoke = (Math.random() < pokeChance);
+    var pokeLog = "";
+
+    if (gotPoke) {
       var found = spawnPokemonForRegion(region2);
-      // ✅ 탐험으로 발견한 것도 '만남'으로 카운트(원하면)
       dexSeen(u, found.id);
       var uid2 = addPokemonToUser(u, found.id);
-      commitSave(true);
       var db2 = findPokemonDB(found.id);
-      replier.reply(sayDo(sender, "탐험을 완료했어요!") + "\n\n" + blockTitle("탐험 성공") + "지역: " + region2 + "\n" + "🧭 탐험 보상: +" + fmtNum(gainGold) + "💰 / +" + fmtNum(gainExp) + "EXP" + (lvMsg ? ("\n\n" + lvMsg) : "") + "\n\n" + "야생 포켓몬 발견!\n" + db2.name + " 합류\n" + "내 포켓몬 ID #" + uid2);
-      return;
+      pokeLog = "🐾 야생 포켓몬 발견!\n" + db2.name + " (#" + uid2 + ") 가 합류했습니다!";
     }
+
+    // 4. 보상 정산 및 저장
+    u.gold += gainGold;
+    var lvMsg = addExpWithLevelUpMsg(u, gainExp);
     commitSave(true);
-    replier.reply(sayDo(sender, "탐험을 완료했어요!") + "\n\n" + blockTitle("탐험") + "지역: " + region2 + "\n" + "🧭 탐험 보상: +" + fmtNum(gainGold) + "💰 / +" + fmtNum(gainExp) + "EXP" + (lvMsg ? ("\n\n" + lvMsg) : "") + "\n\n" + "성과는 있었지만 포켓몬은 발견하지 못했어요.\n" + "다시 도전: /탐험");
+
+    // 5. 결과 출력
+    var header = "🧭 " + sayDo(sender, "탐험 결과") + "\n";
+    var body = "📍 지역: " + region2 + "\n" +
+               "🧭 보상: +" + fmtNum(gainGold) + "💰 / +" + gainExp + "EXP\n" +
+               (lvMsg ? (lvMsg + "\n") : "") + "\n" +
+               (extraLog ? extraLog : "주변에 특별한 물건은 보이지 않습니다.\n") +
+               pokeLog;
+
+    replier.reply(header + "\n" + body);
     return;
   }
   if (msg === "/전적") {
