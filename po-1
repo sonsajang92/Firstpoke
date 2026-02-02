@@ -1629,7 +1629,7 @@ function buildEnhResultMsg(sender, pName, before, after, resultType) {
   }
   
   var afterLabel = (resultType === ENH_RESULT_EXIT) ? "이탈" : enhLabelAlways(after);
-  var header = "🐾 " + sayDo(sender, pName + " 훈련 결과") + "\n" + "📊 강화 단계: " + enhLabelAlways(before) + " → " + afterLabel + "\n\n";
+  var header = "🐾 " + sayDo(decoName, pName + " 훈련 결과") + "\n" + "📊 강화 단계: " + enhLabelAlways(before) + " → " + afterLabel + "\n\n";
   return header + line;
 }
 function pct(x) {
@@ -2955,7 +2955,7 @@ function calcCatchRewards(u, pid) {
 // 전설 연출 문구
 function legendaryCatchFX(sender, name, r) {
   // r: calcCatchRewards 결과
-  return (blockTitle("전설 포획") + "✨ " + sayDo(sender, "전설급 " + name + "을(를) 포획했어요!") + "\n\n" + "🎆 특수 보상 발생!\n" + "추가 보상: +" + r.bonusGold + "💰 / +" + r.bonusExp + "EXP\n\n");
+  return (blockTitle("전설 포획") + "✨ " + sayDo(decoName, "전설급 " + name + "을(를) 포획했어요!") + "\n\n" + "🎆 특수 보상 발생!\n" + "추가 보상: +" + r.bonusGold + "💰 / +" + r.bonusExp + "EXP\n\n");
 }
 function getMaxCatchAttempts(pid) {
   var db = findPokemonDB(pid);
@@ -3561,12 +3561,14 @@ if (sub === "강화") {
     return;
   }
   normalizeUserData(u);
+var decoName = getDecoratedName(u, sender);
   // ✅ 신규 회원가입 보상 (딱 1회)
   var joinMsg = grantSignupBonusIfNeeded(u, sender);
   if (joinMsg) {
     replier.reply(joinMsg);
     commitSave(true);
   }
+
 // -------------------- [수정됨] /내정보 (아이템 목록 제거) --------------------
   if (msg === "/내정보") {
     ensureUserStats(u);
@@ -3597,7 +3599,7 @@ if (sub === "강화") {
     var dexRate = (POKEMON_DB.length === 0) ? 0 : Math.floor((uniqueCaught / POKEMON_DB.length) * 1000) / 10;
 
     var out = "";
-    out += "👤 " + sender + "님의 트레이너 정보\n\n";
+    out += "👤 " + decoName + "님의 트레이너 정보\n\n";
     out += "Lv." + u.trainerLv + " (" + pctExp + "%)\n";
     out += bar + "  " + cur + "/" + need + " EXP\n\n";
     
@@ -3875,7 +3877,7 @@ if (msg.indexOf("/판매 하위") === 0) {
   commitSave(true);
 
   replier.reply(
-    sayDo(sender, "하위 포켓몬 판매가 완료되었습니다.") +
+    sayDo(decoName, "하위 포켓몬 판매가 완료되었습니다.") +
     "\n\n🧾 판매 내역\n" + soldLines.join("\n") +
     "\n\n💰 총 획득 골드: +" + fmtNum(totalGold) + "💰" +
     "\n💰 잔여 골드: " + fmtNum(u.gold) + "💰"
@@ -3957,7 +3959,7 @@ if (msg.indexOf("/판매") === 0) {
   commitSave(true);
 
   var out =
-    sayDo(sender, "요청하신 포켓몬 판매가 완료되었습니다.") +
+    sayDo(decoName, "요청하신 포켓몬 판매가 완료되었습니다.") +
     "\n\n🧾 판매 내역\n" + soldLines2.join("\n") +
     "\n\n💰 총 획득 골드: +" + fmtNum(totalGold2) + "💰" +
     "\n💰 잔여 골드: " + fmtNum(u.gold) + "💰";
@@ -4072,7 +4074,7 @@ if (msg.indexOf("/판매") === 0) {
     if (now - u.lastFieldAt < FIELD_COOLDOWN_MS) {
       var remain = FIELD_COOLDOWN_MS - (now - u.lastFieldAt);
       var sec = Math.ceil(remain / 1000);
-      replier.reply(sayDo(sender, pick(COOLDOWN_LINES)) + "\n⏳ " + sec + "초 후 다시 필드를 탐색할 수 있어요.");
+      replier.reply(sayDo(decoName, pick(COOLDOWN_LINES)) + "\n⏳ " + sec + "초 후 다시 필드를 탐색할 수 있어요.");
       return;
     }
     u.lastFieldAt = now;
@@ -4104,13 +4106,13 @@ if (msg.indexOf("/판매") === 0) {
     var dbw = findPokemonDB(wild.id);
     var rareLine = "";
     if (dbw && dbw.rarity === 5) {
-      rareLine = sayDo(sender, pick(EMPHASIS_RARE5)) + "\n" + pick(EMPHASIS_LEGENDARY) + "\n\n";
+      rareLine = sayDo(decoName, pick(EMPHASIS_RARE5)) + "\n" + pick(EMPHASIS_LEGENDARY) + "\n\n";
     }
     
     var ballLine = "🎒 보유 볼\n" + "- 몬스터볼: " + u.ball + "\n" + "- 슈퍼볼: " + u.superBall + "\n" + "- 하이퍼볼: " + u.ultraBall + "\n\n";
     var guide = "🎯 포획: /몬(/ㅁ), /슈(/ㅅ), /하(/ㅎ)\n" + "🏃 도망: /도망(/ㅌㅌ)\n" + "⏳ " + Math.floor(SPAWN_EXPIRE_MS / 1000) + "초 안에 선택";
     
-    replier.reply(sayDo(sender, pick(FIELD_SEARCH_LINES)) + "\n\n" + "[지역: " + region + "]\n\n" + rareLine + "⚡ " + sayDo(sender, dbw.name + " 와(과) 마주쳤어요!") + "\n" + pick(FIELD_ENCOUNTER_LINES) + "\n\n" + ballLine + guide);
+    replier.reply(sayDo(decoName, pick(FIELD_SEARCH_LINES)) + "\n\n" + "[지역: " + region + "]\n\n" + rareLine + "⚡ " + sayDo(decoName, dbw.name + " 와(과) 마주쳤어요!") + "\n" + pick(FIELD_ENCOUNTER_LINES) + "\n\n" + ballLine + guide);
     return;
   }
   
@@ -4138,7 +4140,7 @@ if (msg.indexOf("/판매") === 0) {
     commitSave(true);
 
     // 6. 결과 전송 (안전하게 처리된 pName 사용)
-    replier.reply(sayDo(sender, pName + "에게서 무사히 도망쳤습니다! 🏃💨"));
+    replier.reply(sayDo(decoName, pName + "에게서 무사히 도망쳤습니다! 🏃💨"));
     return;
   }
    
@@ -4154,7 +4156,7 @@ if (msg.indexOf("/판매") === 0) {
       else replier.reply(name + "가(이) 도망갔습니다.\n/필드 로 다시 탐색해 주세요."); //
       return; //
     }
-    replier.reply(sayDo(sender, "현재 야생 포켓몬이 없습니다.") + "\n/필드 로 탐색해 주세요."); //
+    replier.reply(sayDo(decoName, "현재 야생 포켓몬이 없습니다.") + "\n/필드 로 탐색해 주세요."); //
     return; //
   }
 
@@ -4197,7 +4199,7 @@ if (msg.indexOf("/판매") === 0) {
     var catchResultMsg = 
       fx +
       blockTitle("포획 성공") +
-      "🎉 " + sayDo(sender, db.name + " 포획에 성공했어요!") + "\n\n" +
+      "🎉 " + sayDo(decoName, db.name + " 포획에 성공했어요!") + "\n\n" +
       "✨ 등급: 【 " + (p.grade || "D") + " 등급 】\n" +
       "📊 잠재력 (15점 만점)\n" +
       "⚔️ 힘 : " + (p.ivStr || 0) + " / 15\n" +
@@ -4230,7 +4232,7 @@ if (msg.indexOf("/판매") === 0) {
     return; //
   }
   commitSave(true); //
-  replier.reply(blockTitle("포획 실패") + "💥 " + sayDo(sender, db.name + " 포획에 실패했어요.") + "\n\n" + pick(CATCH_FAIL_DRIP_LINES) + "\n\n" + leftBallsLine + "\n\n🎯 남은 포획 기회: " + leftTry + "회" + "\n\n💡 " + pick(CATCH_FAIL_TIP_LINES) + "\n\n" + "🎯 포획\n" + "/몬 또는 /ㅁ  → 몬스터볼\n" + "/슈 또는 /ㅅ  → 슈퍼볼\n" + "/하 또는 /ㅎ  → 하이퍼볼\n\n" + "🏃 도망: /도망"); //
+  replier.reply(blockTitle("포획 실패") + "💥 " + sayDo(decoName, db.name + " 포획에 실패했어요.") + "\n\n" + pick(CATCH_FAIL_DRIP_LINES) + "\n\n" + leftBallsLine + "\n\n🎯 남은 포획 기회: " + leftTry + "회" + "\n\n💡 " + pick(CATCH_FAIL_TIP_LINES) + "\n\n" + "🎯 포획\n" + "/몬 또는 /ㅁ  → 몬스터볼\n" + "/슈 또는 /ㅅ  → 슈퍼볼\n" + "/하 또는 /ㅎ  → 하이퍼볼\n\n" + "🏃 도망: /도망"); //
   return; //
 }
   
@@ -4246,7 +4248,89 @@ if (msg.indexOf("/판매") === 0) {
     handleCatch(2, "하이퍼볼");
     return;
   }
-  
+
+
+// -------------------- [신규] 칭호 & 칭호도감 --------------------
+  if (msg.indexOf("/칭호") === 0) {
+    // 1. 자동 획득 체크
+    var gained = updateTitles(u);
+    if (gained.length > 0) {
+      replier.reply("🎉 축하합니다! 새로운 칭호를 획득했습니다!\n" + gained.join(", "));
+      commitSave(true);
+    }
+
+    var parts = msg.split(" ").filter(Boolean);
+    var sub = parts[1]; // /칭호 [명령]
+
+    // 2. 칭호 도감 (조건은 비밀!)
+    if (sub === "도감") {
+      var total = TITLE_DB.length;
+      var collected = 0;
+      var listStr = "";
+
+      for (var i = 0; i < TITLE_DB.length; i++) {
+        var t = TITLE_DB[i];
+        var has = (u.titles.indexOf(t.name) !== -1);
+        if (has) {
+          collected++;
+          listStr += (i+1) + ". " + t.name + " (✅ 획득)\n";
+        } else {
+          listStr += (i+1) + ". ??? (🔒 미획득)\n"; // 조건 숨김
+        }
+      }
+
+      var rate = Math.floor((collected / total) * 100);
+      replier.reply(
+        "🏷️ " + sender + "님의 칭호 도감\n" +
+        "수집률: " + rate + "% (" + collected + "/" + total + ")\n\n" +
+        listStr + "\n" +
+        "💡 칭호 획득 조건은 비밀입니다. 게임을 플레이하며 찾아보세요!"
+      );
+      return;
+    }
+
+    // 3. 칭호 장착 (/칭호 이름)
+    if (sub && sub !== "도감") {
+      var targetTitle = sub;
+      var found = false;
+      
+      // 정확히 입력했는지 확인
+      if (u.titles.indexOf(targetTitle) !== -1) found = true;
+      else if (u.titles.indexOf(targetTitle + "인") !== -1) { // "인" 자동 처리
+          targetTitle = targetTitle + "인";
+          found = true;
+      }
+
+      if (!found) {
+        replier.reply("🚫 보유하지 않은 칭호입니다.\n'/칭호'로 목록을, '/칭호 도감'으로 전체를 확인하세요.");
+        return;
+      }
+
+      u.activeTitle = targetTitle;
+      commitSave(true);
+      replier.reply("🏷️ 칭호 변경 완료!\n이제부터 '" + targetTitle + " " + sender + "'(으)로 불립니다.");
+      return;
+    }
+
+    // 4. 보유 목록 조회 (/칭호)
+    var myStr = "";
+    for (var j = 0; j < u.titles.length; j++) {
+      var tName = u.titles[j];
+      if (tName === u.activeTitle) myStr += "✅ " + tName + "\n";
+      else myStr += "⬜ " + tName + "\n";
+    }
+
+    replier.reply(
+      "🏷️ " + sender + "님의 보유 칭호\n" +
+      "현재: " + (u.activeTitle || "뉴비") + " " + sender + "\n\n" +
+      myStr + "\n" +
+      "💡 사용법\n" +
+      "/칭호 [이름] : 칭호 장착\n" +
+      "/칭호 도감 : 전체 칭호 목록 확인 (수집용)"
+    );
+    return;
+  }
+
   // -------------------- [최종] 도감 시스템 (왕관 효과 & 가독성 개선) --------------------
   if (msg.indexOf("/도감") === 0) {
     var t = getTargetFromMsg(d, sender, msg, "/도감");
@@ -4311,7 +4395,7 @@ if (msg.indexOf("/판매") === 0) {
     if (now2 - u.lastExploreAt < EXPLORE_COOLDOWN_MS) {
       var remain = EXPLORE_COOLDOWN_MS - (now2 - u.lastExploreAt);
       var sec = Math.ceil(remain / 1000);
-      replier.reply(sayDo(sender, pick(COOLDOWN_LINES)) + "\n⏳ " + sec + "초 후 다시 탐험할 수 있어요.");
+      replier.reply(sayDo(decoName, pick(COOLDOWN_LINES)) + "\n⏳ " + sec + "초 후 다시 탐험할 수 있어요.");
       return;
     }
     u.lastExploreAt = now2;
@@ -4379,7 +4463,7 @@ if (Math.random() < 0.10) {
     commitSave(true);
 
     // 5. 결과 출력
-    var header = "🧭 " + sayDo(sender, "탐험 결과") + "\n";
+    var header = "🧭 " + sayDo(decoName, "탐험 결과") + "\n";
     var body = "📍 지역: " + region2 + "\n" +
                "🧭 보상: +" + fmtNum(gainGold) + "💰 / +" + gainExp + "EXP\n" +
                (lvMsg ? (lvMsg + "\n") : "") + "\n" +
@@ -4405,7 +4489,7 @@ if (Math.random() < 0.10) {
     if (nowE - u.lastEnhanceAt < ENHANCE_COOLDOWN_MS) {
       var remain = ENHANCE_COOLDOWN_MS - (nowE - u.lastEnhanceAt);
       var sec = Math.ceil(remain / 1000);
-      replier.reply(sayDo(sender, pick(COOLDOWN_LINES)) + "\n⏳ " + sec + "초 후 다시 강화를 시도할 수 있어요.");
+      replier.reply(sayDo(decoName, pick(COOLDOWN_LINES)) + "\n⏳ " + sec + "초 후 다시 강화를 시도할 수 있어요.");
       return;
     }
     u.lastEnhanceAt = nowE;
