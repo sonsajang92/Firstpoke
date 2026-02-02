@@ -724,52 +724,94 @@ function buildDexRankingWithMyRank(d, limit, myName) {
   };
 }
 
+// [수정됨] 등급/IV 데이터가 유실되지 않도록 보존하는 정규화 함수
 function normalizeUserData(u) {
-  if (!u) 
-    return;
-  if (typeof u.trainerLv !== "number") 
-    u.trainerLv = 1;
-  if (typeof u.trainerExp !== "number") 
-    u.trainerExp = 0;
-  if (typeof u.gold !== "number") 
-    u.gold = 0;
-  if (typeof u.ball !== "number") 
-    u.ball = 0;
-  if (typeof u.superBall !== "number") 
-    u.superBall = 0;
-  if (typeof u.ultraBall !== "number") 
-    u.ultraBall = 0;
-  if (typeof u.lastAttendanceKey !== "string") 
-    u.lastAttendanceKey = "";
-  if (!Array.isArray(u.pokemons)) 
-    u.pokemons = [];
-  if (typeof u.nextPokeUid !== "number") 
-    u.nextPokeUid = 1;
-  if (typeof u.catchFailStreak !== "number") 
-    u.catchFailStreak = 0;
-  if (typeof u.lastCatchPid !== "number") 
-    u.lastCatchPid = 0;
+  if (!u) return;
+  
+  // 1. 기본 유저 정보 초기화
+  if (typeof u.trainerLv !== "number") u.trainerLv = 1;
+  if (typeof u.trainerExp !== "number") u.trainerExp = 0;
+  if (typeof u.gold !== "number") u.gold = 0;
+  if (typeof u.ball !== "number") u.ball = 0;
+  if (typeof u.superBall !== "number") u.superBall = 0;
+  if (typeof u.ultraBall !== "number") u.ultraBall = 0;
+  if (typeof u.dopaTicket !== "number") u.dopaTicket = 0; // 도파민 티켓 추가 확인
+  if (typeof u.lastAttendanceKey !== "string") u.lastAttendanceKey = "";
+  if (!Array.isArray(u.pokemons)) u.pokemons = [];
+  if (typeof u.nextPokeUid !== "number") u.nextPokeUid = 1;
+  if (typeof u.catchFailStreak !== "number") u.catchFailStreak = 0;
+  if (typeof u.lastCatchPid !== "number") u.lastCatchPid = 0;
+
+  // 2. 포켓몬 배열 정리 (여기서 데이터 삭제가 일어나지 않게 수정함)
   var fixed = [];
   for (var i = 0; i < u.pokemons.length; i++) {
     var p = u.pokemons[i];
-    if (!p || typeof p !== "object") 
-      continue;
+    if (!p || typeof p !== "object") continue;
+    
     var pid = parseInt(p.pid, 10);
     var uid = parseInt(p.uid, 10);
     var enh = parseInt(p.enh, 10);
-    if (!pid || !uid) 
-      continue;
-    if (!findPokemonDB(pid)) 
-      continue;
-    fixed.push({
-  uid: uid, 
-  pid: pid, 
-  enh: isNaN(enh) ? 0 : enh});
+    
+    if (!pid || !uid) continue;
+    if (!findPokemonDB(pid)) continue;
+
+    // [핵심 수정] 기존에는 여기서 grade와 iv를 안 옮겨서 삭제되었음. 이제 포함시킴.
+    var cleanObj = {
+      uid: uid,
+      pid: pid,
+      enh: isNaN(enh) ? 0 : enh,
+      // 등급/IV가 있으면 그대로 유지, 없으면 나중에 ensurePokemonGrades가 채울 수 있게 undefined로 둠
+      grade: p.grade,
+      ivStr: p.ivStr,
+      ivHp: p.ivHp,
+      ivSpd: p.ivSpd
+    };
+    
+    fixed.push(cleanObj);
   }
   u.pokemons = fixed;
+  
   ensureUserStats(u);
   ensureUserDex(u);
 }
+
+
+// [강력 수정] 원본 배열을 확실하게 수정하고 저장 여부를 반환
+function ensurePokemonGrades(u) {
+  if (!u || !u.pokemons || !Array.isArray(u.pokemons)) return false;
+  
+  var isChanged = false;
+  
+  // 원본 배열(u.pokemons)을 직접 순회하며 수정
+  for (var i = 0; i < u.pokemons.length; i++) {
+    // 여기서 p는 원본 배열의 요소를 참조함
+    var p = u.pokemons[i]; 
+
+    // 등급이 없거나(undefined), 유효하지 않은 값일 때만 새로 생성
+    if (!p.grade) {
+      // 1. 등급 및 IV 생성
+      var newGrade = generatePokemonGrade();
+      var newIVs = generateIVsByGrade(newGrade);
+      
+      // 2. 원본 객체에 직접 할당
+      u.pokemons[i].grade = newGrade;
+      u.pokemons[i].ivStr = newIVs.str;
+      u.pokemons[i].ivHp = newIVs.hp;
+      u.pokemons[i].ivSpd = newIVs.spd;
+      
+      // 3. 도감 반영 (최초 1회)
+      if (typeof dexCaught === "function") {
+        dexCaught(u, p.pid, newGrade);
+      }
+      
+      isChanged = true;
+    }
+  }
+  
+  return isChanged; // 변경사항이 있었다면 true
+}
+
+
 function findUserPokemonByUid(u, uid) {
   uid = parseInt(uid, 10);
   if (!u || !Array.isArray(u.pokemons)) 
@@ -1012,160 +1054,126 @@ function calcHP(db, enh, ivHp) {
   return clamp(hp, 300, 3000);
 }
 
-function calcHit(attDb, attEnh, defDb, defEnh, trainerLvAtt, trainerLvDef) {
-  // 기존 calcDamage를 기반으로 "한 타"로 변환
-  var base = calcDamage(attDb, attEnh, defDb, defEnh);  // {score, mult}
-  // 회피(기본 10%) + 레벨/강화 차이로 약간 보정
-  var dodge = 0.10 + clamp(((trainerLvDef || 1) - (trainerLvAtt || 1)) * 0.0008, -0.03, 0.03) + clamp((defEnh - attEnh) * 0.004, -0.02, 0.02);
-  dodge = clamp(dodge, 0.06, 0.18);
-  // 방어(기본 12%) : 성공하면 데미지 45% 감소
-  var guard = 0.12 + clamp(defEnh * 0.002, 0, 0.04);
-  guard = clamp(guard, 0.10, 0.20);
-  // 급소(기본 12%) : 크리 배율 1.55
-  var crit = 0.12 + clamp(attEnh * 0.001, 0, 0.03);
-  crit = clamp(crit, 0.10, 0.18);
-  // 랜덤 흔들림(±12%)
+// [1단계] 개체값(IV) 반영 데미지 공식
+function calcHit(attDb, attP, defDb, defP, trainerLvAtt, trainerLvDef) {
+  // attP, defP: 포켓몬 객체 (enh, ivStr, ivSpd 포함)
+  
+  // 1. 데미지 계산에 힘(ivStr) 반영
+  var base = calcDamage(attDb, attP.enh, defDb, defP.enh);
+  
+  // 개체값 보너스: (힘 IV * 1.5)% 만큼 최종 데미지 증가
+  var strBonus = 1 + ((attP.ivStr || 0) * 0.015); 
+  base.score = Math.floor(base.score * strBonus);
+
+  // 2. 회피율 계산에 공속(ivSpd) 반영 (상대 공속이 높으면 회피 어려움)
+  var spdDiff = (defP.ivSpd || 0) - (attP.ivStr || 0); 
+  var dodge = 0.10 
+    + clamp(((trainerLvDef || 1) - (trainerLvAtt || 1)) * 0.0008, -0.03, 0.03) 
+    + clamp((defP.enh - attP.enh) * 0.004, -0.02, 0.02)
+    + (spdDiff * 0.002); 
+
+  dodge = clamp(dodge, 0.05, 0.25); 
+
+  // 3. 방어/크리 계산
+  var guard = 0.12 + clamp(defP.enh * 0.002, 0, 0.04);
+  var crit = 0.12 + clamp(attP.enh * 0.001, 0, 0.03) + ((attP.ivSpd || 0) * 0.003);
+  crit = clamp(crit, 0.10, 0.25);
+
   var swing = rnd(0.88, 1.12);
-  // 판정
+
   if (Math.random() < dodge) {
-    return {
-  dodged: true, 
-  guarded: false, 
-  crit: false, 
-  dmg: 0, 
-  mult: base.mult};
+    return { dodged: true, guarded: false, crit: false, dmg: 0, mult: base.mult };
   }
+
   var isGuard = (Math.random() < guard);
   var isCrit = (Math.random() < crit);
   var dmg = Math.max(1, Math.floor(base.score * swing * (isCrit ? 1.55 : 1.0) * (isGuard ? 0.55 : 1.0)));
-  return {
-  dodged: false, 
-  guarded: isGuard, 
-  crit: isCrit, 
-  dmg: dmg, 
-  mult: base.mult};
+
+  return { dodged: false, guarded: isGuard, crit: isCrit, dmg: dmg, mult: base.mult };
 }
-function simulateBattleLog(aName, aDb, aEnh, aTLv, aIvHp, bName, bDb, bEnh, bTLv, bIvHp) {
-  var aMax = calcHP(aDb, aEnh, aIvHp); // 세 번째 인자로 ivHp 전달
-  var bMax = calcHP(bDb, bEnh, bIvHp); // 세 번째 인자로 ivHp 전달
+
+// [수정됨] 배틀 로그 시뮬레이터 (객체를 받아서 처리하는 신형)
+function simulateBattleLog(aName, aDb, aP, aTLv, bName, bDb, bP, bTLv) {
+  // aP, bP: 포켓몬 객체 통째로 (enh, ivHp, ivStr, ivSpd 등 포함)
+  
+  // 체력 계산 (IV 반영)
+  var aMax = calcHP(aDb, aP.enh, aP.ivHp || 0);
+  var bMax = calcHP(bDb, bP.enh, bP.ivHp || 0);
   var aHP = aMax;
   var bHP = bMax;
 
-  // 선공 확률
-  var aFirst = 0.50 + clamp((aEnh - bEnh) * 0.02, -0.12, 0.12);
+  // 선공 확률 (공속 IV가 높은 쪽이 유리)
+  var spdAdvantage = ((aP.ivSpd || 0) - (bP.ivSpd || 0)) * 0.02;
+  var aFirst = 0.50 + clamp((aP.enh - bP.enh) * 0.02 + spdAdvantage, -0.2, 0.2);
   var aTurn = (Math.random() < aFirst);
 
   var log = "";
-  var aE = enhLabel(aEnh);
-  var bE = enhLabel(bEnh);
+  var aE = enhLabel(aP.enh);
+  var bE = enhLabel(bP.enh);
 
-  log += aName + ": " + aDb.name + (aE ? (" " + aE) : "") + " (HP " + aHP + ")\n";
-  log += bName + ": " + bDb.name + (bE ? (" " + bE) : "") + " (HP " + bHP + ")\n\n";
+  // [상세 스탯 표시]
+  log += "⚔️ " + aName + ": " + aDb.name + (aE ? " " + aE : "") + "\n(HP " + aMax + " / 힘 " + (aP.ivStr||0) + " / 민 " + (aP.ivSpd||0) + ")\n";
+  log += "🛡️ " + bName + ": " + bDb.name + (bE ? " " + bE : "") + "\n(HP " + bMax + " / 힘 " + (bP.ivStr||0) + " / 민 " + (bP.ivSpd||0) + ")\n\n";
   log += (aTurn ? (aName + "의 선공!\n\n") : (bName + "의 선공!\n\n"));
 
   var turn = 1;
-  var MAX_SAFE_TURNS = 200;     // 무한 방지
-  var LOG_TURN_LIMIT = 14;      // 로그 출력 제한
+  var MAX_SAFE_TURNS = 200;
+  var LOG_TURN_LIMIT = 14;
   var skipped = false;
-
-  var aCrisisShown = false;
-  var bCrisisShown = false;
+  var aCrisisShown = false; var bCrisisShown = false;
 
   while (aHP > 0 && bHP > 0 && turn <= MAX_SAFE_TURNS) {
     var attackerName = aTurn ? aName : bName;
     var defenderName = aTurn ? bName : aName;
+    
+    // 객체 통째로 전달 준비
     var attDb = aTurn ? aDb : bDb;
     var defDb = aTurn ? bDb : aDb;
-    var attEnh = aTurn ? aEnh : bEnh;
-    var defEnh = aTurn ? bEnh : aEnh;
+    var attP_curr = aTurn ? aP : bP;
+    var defP_curr = aTurn ? bP : aP;
     var attLv = aTurn ? aTLv : bTLv;
     var defLv = aTurn ? bTLv : aTLv;
 
-    var hit = calcHit(attDb, attEnh, defDb, defEnh, attLv, defLv);
+    // [중요] calcHit에 '객체'를 넘깁니다!
+    var hit = calcHit(attDb, attP_curr, defDb, defP_curr, attLv, defLv);
     var doLog = (turn <= LOG_TURN_LIMIT);
 
     if (hit.dodged) {
-      if (doLog) {
-        log += turn + "턴) " + attackerName + "의 공격!\n";
-        log += "→ " + defenderName + " " + funnyDodgeText() + "\n\n";
-      }
+      if (doLog) log += turn + "턴) " + attackerName + " 공격! → " + defenderName + " " + funnyDodgeText() + "\n\n";
     } else {
-      // ⭐ rarity / 턴 기반 보정
       var finalDmg = hit.dmg;
+      // 희귀도 보정
+      var mod = getRarityBattleModifier(attDb, turn); 
+      finalDmg = Math.floor(finalDmg * mod.atk);
+      if(defDb.rarity) {
+          var dmod = getRarityBattleModifier(defDb, turn);
+          finalDmg = Math.floor(finalDmg * dmod.def);
+      }
+      finalDmg = Math.max(1, finalDmg);
+      
+      // NaN 방지
+      if (isNaN(finalDmg)) finalDmg = 1;
 
-// ================================
-// rarity / 턴 기반 스케일링
-// ================================
-
-// 🔥 전설 (rarity 5): 초반 폭딜형
-if (attDb.rarity === 5) {
-  if (turn <= 3) {
-    finalDmg = Math.floor(finalDmg * 1.22); // 초반 매우 강함
-  } else if (turn <= 6) {
-    finalDmg = Math.floor(finalDmg * 1.10); // 중반 완만
-  }
-  // 후반 보정 없음 (정직)
-}
-
-// 💪 상급 / 최종진화 (rarity 4): 후반 캐리
-if (attDb.rarity === 4) {
-  if (turn >= 6) {
-    finalDmg = Math.floor(finalDmg * 1.15);
-  }
-  if (turn >= 10) {
-    finalDmg = Math.floor(finalDmg * 1.25);
-  }
-}
-
-// ⚔️ 준전투급 (rarity 3): 후반에만 힘 받음
-if (attDb.rarity === 3) {
-  if (turn >= 8) {
-    finalDmg = Math.floor(finalDmg * 1.18);
-  }
-}
-
-// 🛡️ 방어 측 후반 탱킹 (rarity 3~4만)
-if (defDb.rarity === 4 && turn >= 8) {
-  finalDmg = Math.floor(finalDmg * 0.88);
-}
-if (defDb.rarity === 3 && turn >= 10) {
-  finalDmg = Math.floor(finalDmg * 0.92);
-}
-finalDmg = Math.max(1, finalDmg);
-
-      if (aTurn) bHP -= finalDmg;
-      else aHP -= finalDmg;
+      if (aTurn) bHP -= finalDmg; else aHP -= finalDmg;
 
       if (doLog) {
-        log += turn + "턴) " + attackerName + "의 공격!\n";
-        log += "→ " + defenderName + " -" + finalDmg + " HP";
-        if (hit.crit) log += " 급소!";
-        if (hit.guarded) log += " (방어)";
+        log += turn + "턴) " + attackerName + " 공격! → " + defenderName + " -" + finalDmg;
+        if (hit.crit) log += " 💥급소!";
+        if (hit.guarded) log += " 🛡️방어";
         log += "\n";
-
         var eff = typeEffectText(hit.mult);
         if (eff) log += eff + "\n";
-
-        log += "현재 HP: " +
-          aName + " " + Math.max(0, aHP) + "/" + aMax +
-          " | " +
-          bName + " " + Math.max(0, bHP) + "/" + bMax + "\n\n";
+        log += "HP: " + aName + " " + Math.max(0, aHP) + " vs " + bName + " " + Math.max(0, bHP) + "\n\n";
       } else if (!skipped) {
         skipped = true;
-        log += "...\n(이후 전투는 HP 0까지 계속 진행됩니다)\n...\n\n";
+        log += "...\n(생략)\n...\n\n";
       }
     }
-
+    
     // 위기 연출
     if (doLog) {
-      if (!aCrisisShown && aHP > 0 && aHP <= aMax * 0.2) {
-        log += crisisText(aName) + "\n\n";
-        aCrisisShown = true;
-      }
-      if (!bCrisisShown && bHP > 0 && bHP <= bMax * 0.2) {
-        log += crisisText(bName) + "\n\n";
-        bCrisisShown = true;
-      }
+      if (!aCrisisShown && aHP > 0 && aHP <= aMax * 0.2) { log += crisisText(aName) + "\n\n"; aCrisisShown = true; }
+      if (!bCrisisShown && bHP > 0 && bHP <= bMax * 0.2) { log += crisisText(bName) + "\n\n"; bCrisisShown = true; }
     }
 
     aTurn = !aTurn;
@@ -1177,16 +1185,10 @@ finalDmg = Math.max(1, finalDmg);
   else if (bHP <= 0) winner = "A";
   else if (aHP <= 0) winner = "B";
   else {
-    if (aHP > bHP) winner = "A";
-    else if (bHP > aHP) winner = "B";
-    log += "안전 상한 턴 도달! 남은 HP로 판정합니다.\n\n";
+    if (aHP > bHP) winner = "A"; else if (bHP > aHP) winner = "B";
   }
 
-  var resultLine =
-    (winner === "A") ? ("결과: " + aName + " 승리!") :
-    (winner === "B") ? ("결과: " + bName + " 승리!") :
-    "결과: 무승부!";
-
+  var resultLine = (winner === "A") ? ("결과: " + aName + " 승리!") : (winner === "B") ? ("결과: " + bName + " 승리!") : "결과: 무승부!";
   return { winner: winner, log: log, resultLine: resultLine };
 }
 
@@ -1230,33 +1232,25 @@ function getBattleEligiblePokemons(u) {
   return out;
 }
 
+// [수정됨] 등급/IV가 반영된 배틀 실행 함수
 function runSingleBattle(d, room, sender, u, myPickUid, opt) {
   ensureUserStats(u);
   opt = opt || {};
-
-  var isChain = !!opt.isChain; // 연속배틀이면 true
-  var mult = (opt.rewardMult != null) ? opt.rewardMult : 1.0; // 보상 배율
-
-  // 전적 반영 정책
-  // - 연속배틀(isChain)은 전적/연승에 영향 없음
-  // - 단일배틀은 "배틀을 실행한 사람(u)"만 전적 카운팅
+  var isChain = !!opt.isChain; // 연속배틀 여부
+  var mult = (opt.rewardMult != null) ? opt.rewardMult : 1.0;
   var affectRecord = !isChain;
 
-  // 내 참가 가능 포켓몬(20강 이상)
+  // 1. [안전장치] 내 포켓몬 등급 없으면 즉시 생성 (S급 반영 위해 필수)
+  if (ensurePokemonGrades(u)) saveData(d);
+
   var myEligible = getBattleEligiblePokemons(u);
   if (myEligible.length === 0) {
-    return {
-      ok: false,
-      msg:
-        "배틀 참가 조건: " + BATTLE_MIN_ENH + "강 이상 포켓몬이 필요합니다.\n" +
-        "/강화 로 " + BATTLE_MIN_ENH + "강 이상을 만든 뒤 /배틀 을 시도해 주세요."
-    };
+    return { ok: false, msg: "배틀 참가 조건: " + BATTLE_MIN_ENH + "강 이상 포켓몬이 필요합니다." };
   }
 
-  // 상대 후보
   var oppList = getEligibleOpponents(d, room, sender);
   if (oppList.length === 0) {
-    return { ok: false, msg: "배틀 가능한 상대가 없습니다.\n(최근 활동 유저 + 포켓몬 보유 필요)" };
+    return { ok: false, msg: "배틀 가능한 상대가 없습니다." };
   }
 
   var oppName = randomPick(oppList);
@@ -1264,138 +1258,68 @@ function runSingleBattle(d, room, sender, u, myPickUid, opt) {
   normalizeUserData(opp);
   ensureUserStats(opp);
 
-  // 내 포켓몬 선택(지정 or 랜덤)
+  // 2. [안전장치] 상대방도 등급 없으면 즉시 생성 (그래야 공평함)
+  if (ensurePokemonGrades(opp)) saveData(d);
+
   var myP = null;
   if (myPickUid != null) {
     myP = findUserPokemonByUid(u, myPickUid);
-    if (!myP) {
-      return { ok: false, msg: "해당 포켓몬을 찾을 수 없습니다.\n/내포켓몬 으로 ID(#번호)를 확인해 주세요." };
-    }
-    if ((myP.enh || 0) < BATTLE_MIN_ENH) {
-      return {
-        ok: false,
-        msg:
-          "해당 포켓몬은 " + BATTLE_MIN_ENH + "강 미만이라 배틀에 참가할 수 없습니다.\n" +
-          BATTLE_MIN_ENH + "강 이상 포켓몬으로 다시 시도해 주세요."
-      };
+    if (!myP || (myP.enh || 0) < BATTLE_MIN_ENH) {
+      return { ok: false, msg: "해당 포켓몬은 배틀에 참가할 수 없습니다." };
     }
   } else {
     myP = randomPick(myEligible);
   }
 
-  // 상대 포켓몬도 20강 이상만
   var oppEligible = getBattleEligiblePokemons(opp);
-  if (oppEligible.length === 0) {
-    return { ok: false, msg: "배틀 가능한 상대가 없습니다.\n(상대가 " + BATTLE_MIN_ENH + "강 이상 포켓몬을 보유해야 합니다.)" };
-  }
+  if (oppEligible.length === 0) return { ok: false, msg: "상대방에게 배틀 가능한 포켓몬이 없습니다." };
   var opP = randomPick(oppEligible);
 
-  // DB
   var myDb = findPokemonDB(myP.pid);
   var opDb = findPokemonDB(opP.pid);
-  if (!myDb || !opDb) {
-    return { ok: false, msg: "배틀 처리 중 오류가 발생했습니다. (포켓몬 DB 확인 필요)\n/내포켓몬 으로 목록 확인 후 다시 시도해 주세요." };
-  }
+  if (!myDb || !opDb) return { ok: false, msg: "DB 오류" };
 
-  // 시뮬
+  // 3. [핵심 수정] 객체를 통째로 넘겨서 S급 성능을 제대로 반영함!
   var sim = simulateBattleLog(
-  sender, myDb, myP.enh, u.trainerLv, myP.ivHp, // 내 정보 + 체력IV
-  oppName, opDb, opP.enh, opp.trainerLv, opP.ivHp // 상대 정보 + 체력IV
-);
+    sender, myDb, myP, u.trainerLv,
+    oppName, opDb, opP, opp.trainerLv
+  );
 
-  var result = 0; // 1:승 -1:패 0:무
-  if (sim.winner === "A") result = 1;
-  else if (sim.winner === "B") result = -1;
+  var result = 0; 
+  if (sim.winner === "A") result = 1; else if (sim.winner === "B") result = -1;
 
-  var goldGain = 0;
-  var expGain = 0;
-  var extraLines = "";
+  var goldGain = 0; var expGain = 0; var extraLines = "";
 
-  // 전적/연승: 실행자(u)만 반영 (opp.stats.* 절대 건드리지 않음)
   if (result === 1) {
     if (affectRecord) {
-      u.stats.battleWin += 1;
-      u.stats.battleStreak += 1;
+      u.stats.battleWin++; u.stats.battleStreak++;
       u.stats.bestStreak = Math.max(u.stats.bestStreak, u.stats.battleStreak);
-
-      // 연승 보너스는 단일배틀만
-      if (u.stats.battleStreak % STREAK_GOLD_BONUS_EVERY === 0) {
-        u.gold += STREAK_GOLD_BONUS;
-        extraLines += "연승 보너스! +" + STREAK_GOLD_BONUS + "💰\n";
-      }
-      if (u.stats.battleStreak % STREAK_EXP_BONUS_EVERY === 0) {
-        var lvMsg2 = addExpWithLevelUpMsg(u, STREAK_EXP_BONUS);
-        if (lvMsg2) extraLines += lvMsg2 + "\n";
-        extraLines += "연승 보너스! +" + STREAK_EXP_BONUS + "EXP\n";
-      }
+      if (u.stats.battleStreak % STREAK_GOLD_BONUS_EVERY === 0) { u.gold += STREAK_GOLD_BONUS; extraLines += "연승 보너스! +" + STREAK_GOLD_BONUS + "💰\n"; }
+      if (u.stats.battleStreak % STREAK_EXP_BONUS_EVERY === 0) { addExpWithLevelUpMsg(u, STREAK_EXP_BONUS); extraLines += "연승 보너스! +" + STREAK_EXP_BONUS + "EXP\n"; }
     }
-
-    goldGain = BATTLE_GOLD_WIN;
-    expGain = BATTLE_EXP_WIN;
-
+    goldGain = BATTLE_GOLD_WIN; expGain = BATTLE_EXP_WIN;
   } else if (result === -1) {
-    if (affectRecord) {
-      u.stats.battleLose += 1;
-      u.stats.battleStreak = 0;
-    }
-    goldGain = BATTLE_GOLD_LOSE;
-    expGain = BATTLE_EXP_LOSE;
-
+    if (affectRecord) { u.stats.battleLose++; u.stats.battleStreak = 0; }
+    goldGain = BATTLE_GOLD_LOSE; expGain = BATTLE_EXP_LOSE;
   } else {
-    if (affectRecord) {
-      u.stats.battleDraw += 1;
-
-      if (u.stats.battleStreak > 0) {
-        u.stats.battleStreak = 0;
-        extraLines += pick(STREAK_RESET_DRAW_LINES) + "\n";
-      }
-    }
+    if (affectRecord) { u.stats.battleDraw++; if (u.stats.battleStreak > 0) { u.stats.battleStreak = 0; extraLines += pick(STREAK_RESET_DRAW_LINES) + "\n"; } }
   }
 
-  // 연속배틀 배율 적용
-  goldGain = Math.max(0, Math.floor(goldGain * mult));
-  expGain = Math.max(0, Math.floor(expGain * mult));
-
-  // 실제 지급
+  goldGain = Math.floor(goldGain * mult); expGain = Math.floor(expGain * mult);
   if (goldGain > 0) u.gold += goldGain;
+  if (expGain > 0) { var lvMsg = addExpWithLevelUpMsg(u, expGain); if(lvMsg) extraLines += lvMsg + "\n"; }
 
-  if (expGain > 0) {
-    var lvMsg = addExpWithLevelUpMsg(u, expGain);
-    if (lvMsg) extraLines += lvMsg + "\n";
-  }
-
-  // 출력
   var header = blockTitle("배틀 결과");
   header += battleMyPickLine(myP.uid, myDb, myP.enh) + "\n";
   header += battleOppPickLine(oppName, opP.uid, opDb, opP.enh) + "\n\n";
 
-  var resultLine =
-    (result === 1) ? ("🏆 승리: " + sender + "\n") :
-    (result === -1) ? ("💀 패배: " + sender + "\n") :
-    ("🤝 무승부\n");
-
-  var rewardLine = (goldGain > 0 || expGain > 0) ? (battleRewardLine(goldGain, expGain) + "\n") : "";
-  var comment =
-    (result === 1) ? (pick(BATTLE_COMMENT_WIN) + "\n") :
-    (result === -1) ? (pick(BATTLE_COMMENT_LOSE) + "\n") :
-    (pick(BATTLE_COMMENT_DRAW) + "\n");
-
-  var summary =
-    header + resultLine + rewardLine +
-    (extraLines ? ("\n" + extraLines) : "") +
-    "\n" + comment +
-    "\n전체보기로 배틀 로그를 확인하세요.";
-
+  var resultLine = (result === 1) ? ("🏆 승리: " + sender + "\n") : (result === -1) ? ("💀 패배: " + sender + "\n") : ("🤝 무승부\n");
+  var rewardLine = (goldGain > 0) ? (battleRewardLine(goldGain, expGain) + "\n") : "";
+  
+  var summary = header + resultLine + rewardLine + (extraLines ? ("\n" + extraLines) : "") + "\n전체보기로 배틀 로그를 확인하세요.";
   var full = "\n\n[배틀 로그]\n\n" + sim.log + sim.resultLine + "\n";
 
-  return {
-    ok: true,
-    result: result,
-    summary: summary,
-    full: full,
-    myPick: { uid: myP.uid, name: myDb.name, enh: myP.enh },
-    oppPick: { uid: opP.uid, owner: oppName, name: opDb.name, enh: opP.enh }
-  };
+  return { ok: true, result: result, summary: summary, full: full, myPick: myP, oppPick: opP };
 }
 
 
@@ -2394,22 +2318,30 @@ function getUserTopPokemonPower(user) {
   name: db ? db.name : "알수없음", 
   enh: top.enh || 0};
 }
+// [수정됨] 전투력 랭킹 (조회 시 데이터 보정 포함)
 function buildBattlePowerRanking(d, topN, sender) {
   topN = topN || 7;
-
   var rows = [];
   var names = Object.keys(d.users || {});
+  
+  // 랭킹 산정 중 데이터 변경이 일어날 수 있음 (미접속자 등급 부여 등)
+  var dataChanged = false; 
+
   for (var i = 0; i < names.length; i++) {
     var name = names[i];
     if (!name) continue;
-
     var user = d.users[name];
     if (!user) continue;
 
     normalizeUserData(user);
     if (!user.pokemons || user.pokemons.length === 0) continue;
 
-    var top = getUserTopPokemonPower(user);
+    // [중요] 랭킹 집계할 때도 등급 없으면 부여해버림
+    if (ensurePokemonGrades(user)) {
+      dataChanged = true;
+    }
+
+    var top = getUserTopPokemonPower(user); // 이제 등급이 반영된 전투력이 나옴
     rows.push({
       name: name,
       power: top.power,
@@ -2417,6 +2349,11 @@ function buildBattlePowerRanking(d, topN, sender) {
       pName: top.name,
       enh: top.enh
     });
+  }
+
+  // 랭킹 집계 중 데이터가 변했으면 저장 (미접속자 데이터 갱신)
+  if (dataChanged) {
+    saveData(d);
   }
 
   rows.sort(function(a, b) {
@@ -2434,6 +2371,7 @@ function buildBattlePowerRanking(d, topN, sender) {
 
   return { rows: rows, myIdx: myIdx, topN: topN };
 }
+
 // -------------------- 운영자(관리자) 설정 --------------------
 var ADMIN_MAP = {
   "손사장": true};
@@ -3614,107 +3552,37 @@ out += "몬스터볼: " + target.ball + " | 슈퍼볼: " + target.superBall + " 
     commitSave(false);
     return;
   }
-  // -------------------- [수정] 본인 포켓몬 조회 --------------------
+  // -------------------- [수정됨] /내포켓몬 (저장 확실시) --------------------
   if (msg === "/내포켓몬") {
     if (!u.pokemons || u.pokemons.length === 0) {
       replier.reply(sender + "님은 보유한 포켓몬이 없습니다.");
       return;
     }
-    var summary = "🎒 " + sender + "님의 보유 포켓몬\n" + "총 " + u.pokemons.length + "마리\n\n" + "전체보기로 목록을 확인하세요.";
-    var full = "\n\n[보유 포켓몬 목록]\n\n";
-    var sorted = sortPokemonsByPower(u.pokemons);
-        // --- 목록 출력 루프 (내포켓몬 / 포켓몬 공통) ---
-        // --- [최종 교체 구간] 보정 로직 + 출력 로직 통합 ---
-    for (var i = 0; i < sorted.length; i++) {
-      var p = sorted[i];
 
-      // 1. [데이터 보정] 등급 데이터가 없는 기존 포켓몬 발견 시 즉석 생성
-      if (!p.grade) {
-        p.grade = generatePokemonGrade(); 
-        var ivs = generateIVsByGrade(p.grade);
-        p.ivStr = ivs.str;
-        p.ivHp = ivs.hp;
-        p.ivSpd = ivs.spd;
-
-        // 도감의 최고 등급(maxGrade) 기록도 함께 업데이트
-        ensureUserDex(u);
-        var pidStr = String(p.pid);
-        if (!u.dex[pidStr]) {
-          u.dex[pidStr] = { seen: 1, caught: 1, maxGrade: p.grade };
-        } else {
-          var curMax = u.dex[pidStr].maxGrade || "D";
-          if (GRADE_ORDER[p.grade] > GRADE_ORDER[curMax]) {
-            u.dex[pidStr].maxGrade = p.grade;
-          }
-        }
-        saveData(d); // 변경 사항 저장
-      }
-
-      // 2. [출력 로직] 화면에 보여줄 정보 조립
-      var power = calcBattlePower(p); // 4단계 수정 공식 반영
-      var dbp = findPokemonDB(p.pid);
-      var name = dbp ? dbp.name : "알수없음";
-      var enh = (p.enh && p.enh > 0) ? (p.enh + "강") : "0강";
-      var grade = p.grade || "D";
-      
-            // [수정된 출력 포맷] 이름 뒤에 등급을 배치
-      full += (i + 1) + ". #" + p.uid + " " + name + " " + enh + " | 전투력 " + power + " | [" + grade + "등급]\n";
-       }
-
-    replyFold(replier, summary, full);
-    return;
-  }
-    
-    // -------------------- [개편] 타인 포켓몬 조회 (보정 로직 포함) --------------------
-  if (msg.indexOf("/포켓몬") === 0) {
-    var t = getTargetFromMsg(d, sender, msg, "/포켓몬");
-    if (!t) {
-      replier.reply("해당 유저를 찾을 수 없습니다.");
-      return;
+    // 1. 등급이 없으면 부여하고, 변경사항이 있으면 "강제 저장"
+    var needSave = ensurePokemonGrades(u);
+    if (needSave) {
+      saveData(d); // ★ 파일에 즉시 저장
+      // (테스트용) 저장했다는 사실을 알 수 있게 로그를 띄울 수도 있음
+      // replier.reply("[시스템] 구형 포켓몬 데이터를 신형(등급제)으로 변환하여 저장했습니다.");
     }
 
-    var target = t.user;
-    var targetName = t.name;
-
-    var summary = "📱 " + targetName + "님의 포켓몬 목록\n" +
-                  "━━━━━━━━━━━━━━\n" +
-                  "보유 수: " + target.pokemons.length + "마리\n" +
-                  "전체보기로 상세 목록을 확인하세요.";
-
-    var full = "\n\n[포켓몬 목록]\n\n";
-    var sorted = sortPokemonsByPower(target.pokemons);
+    var summary = "🎒 " + sender + "님의 보유 포켓몬\n" + "총 " + u.pokemons.length + "마리\n\n" + "전체보기로 목록을 확인하세요.";
+    var full = "\n\n[보유 포켓몬 목록]\n\n";
+    
+    // 2. 저장된 데이터를 정렬 (여기서는 값 변경 절대 없음)
+    // sortPokemonsByPower가 원본을 건드리지 않도록 slice()로 복사본 사용
+    var listCopy = u.pokemons.slice(); 
+    var sorted = sortPokemonsByPower(listCopy);
 
     for (var i = 0; i < sorted.length; i++) {
       var p = sorted[i];
-
-      // [데이터 보정] 등급 데이터가 없는 포켓몬 발견 시 즉석 생성 및 도감 반영
-      if (!p.grade) {
-        p.grade = generatePokemonGrade(); 
-        var ivs = generateIVsByGrade(p.grade);
-        p.ivStr = ivs.str;
-        p.ivHp = ivs.hp;
-        p.ivSpd = ivs.spd;
-
-        // 도감 최고 등급 기록 동기화
-        ensureUserDex(target);
-        var pidStr = String(p.pid);
-        if (!target.dex[pidStr]) {
-          target.dex[pidStr] = { seen: 1, caught: 1, maxGrade: p.grade };
-        } else {
-          var curMax = target.dex[pidStr].maxGrade || "D";
-          if (GRADE_ORDER[p.grade] > GRADE_ORDER[curMax]) {
-            target.dex[pidStr].maxGrade = p.grade;
-          }
-        }
-        saveData(d); // 데이터 변경 시 저장
-      }
-
-      // 출력용 정보 조립
       var power = calcBattlePower(p);
       var dbp = findPokemonDB(p.pid);
       var name = dbp ? dbp.name : "알수없음";
       var enh = (p.enh && p.enh > 0) ? (p.enh + "강") : "0강";
-      var grade = p.grade || "D";
+      // 이제 p.grade는 무조건 파일에서 불러온 고정값이어야 함
+      var grade = p.grade || "D"; 
       
       full += (i + 1) + ". #" + p.uid + " " + name + " " + enh + " | 전투력 " + power + " | [" + grade + "등급]\n";
     }
@@ -3722,7 +3590,7 @@ out += "몬스터볼: " + target.ball + " | 슈퍼볼: " + target.superBall + " 
     replyFold(replier, summary, full);
     return;
   }
-  
+
 // -------------------- /판매 하위 N --------------------
 if (msg.indexOf("/판매 하위") === 0) {
   var sp = msg.split(" ").filter(Boolean);
