@@ -37,11 +37,11 @@ function fmtAny(v) {
 var DATA_PATH = "/sdcard/mbot_pokemon_db.json";
 // -------------------- 밸런스(표준) --------------------
 var MAX_LV = 150;
-var ENHANCE_MAX = 100;
+var ENHANCE_MAX = 60;
 var FIELD_COOLDOWN_MS = 10 * 1000;// /필드 10초
-var EXPLORE_COOLDOWN_MS = 1 * 1000;// /탐험 55초
+var EXPLORE_COOLDOWN_MS = 30 * 1000;// /탐험 30초
 var ENHANCE_COOLDOWN_MS = 4 * 1000;// /강화 4초
-var BATTLE_COOLDOWN_MS = 15 * 1000;// /배틀 15초
+var BATTLE_COOLDOWN_MS = 10 * 1000;// /배틀 10초
 var ACTIVE_TTL_MS = 6 * 60 * 60 * 1000;// 6시간 이내 채팅한 유저만 배틀 매칭
 
 // 포획 보상 (난수)
@@ -847,12 +847,12 @@ var ENH_RESULT_KEEP = "KEEP";
 var ENH_RESULT_EXIT = "EXIT";
 var ENH_RESULT_DOWN = "DOWN";// 딱히 안쓰일 예정
 
+// [수정됨] 강화 티어 구분 (60강 기준)
 function getEnhTier(enh) {
   if (enh < 10) return "EASY";
-  if (enh < 20) return "MID";
-  if (enh < 50) return "HARD";
-  if (enh < 80) return "HELL";
-  return "GOD";
+  if (enh < 20) return "MID";   // 20강까지 진화 구간
+  if (enh < 40) return "HARD";  // 20~40강 고비
+  return "HELL";                // 40강 이상 지옥
 }
 // -------------------- 출석 보상 테이블 --------------------
 var ATTENDANCE_STREAK_REWARD = {
@@ -1501,51 +1501,49 @@ function clamp01(x) {
   return Math.max(0, Math.min(1, x));
 }
 
-// [수정됨] 100강 확장 확률 테이블
+// [밸런스 패치] 60강 체제 확률표
+// 0~20: 진화 지원 (혜자)
+// 30~40: 통곡의 벽 (두쫀쿠 유도 시작)
+// 40~60: 1~2% (두쫀쿠 필수 구간)
 function enhanceRatesByRarity(nextEnh, trainerLv, rarity) {
   nextEnh = parseInt(nextEnh, 10);
   if (isNaN(nextEnh)) nextEnh = 1;
-  var curEnh = nextEnh - 1; // 현재 강화 단계
+  var curEnh = nextEnh - 1; 
 
-  // [구간별 성공 확률 (min ~ max)]
-  var min = 0.01, max = 0.01; // 기본 1%
+  var min = 0.01, max = 0.01;
 
-  if (curEnh < 5)        { min = 0.90; max = 1.00; } // 0~4 -> 1~5
-  else if (curEnh < 10)  { min = 0.70; max = 0.80; } // 5~9 -> 6~10
-  else if (curEnh < 15)  { min = 0.50; max = 0.60; } // 10~14
-  else if (curEnh < 20)  { min = 0.30; max = 0.40; } // 15~19
-  else if (curEnh < 30)  { min = 0.10; max = 0.20; } // 20~29 (기존 엔드구간)
-  else if (curEnh < 50)  { min = 0.03; max = 0.07; } // 30~49 (고난도)
-  else if (curEnh < 80)  { min = 0.01; max = 0.03; } // 50~79 (헬)
-  else                   { min = 0.01; max = 0.01; } // 80~99 (1% 고정)
+  // [구간별 확률 설정]
+  if (curEnh < 5)        { min = 0.95; max = 1.00; } // 0~4 (거의 성공)
+  else if (curEnh < 10)  { min = 0.80; max = 0.90; } // 5~9 (매우 쉬움)
+  else if (curEnh < 15)  { min = 0.60; max = 0.75; } // 10~14 (쉬움)
+  else if (curEnh < 20)  { min = 0.40; max = 0.55; } // 15~19 (할만함 - 진화 구간)
+  else if (curEnh < 30)  { min = 0.15; max = 0.30; } // 20~29 (갑자기 어려워짐)
+  else if (curEnh < 40)  { min = 0.03; max = 0.08; } // 30~39 (통곡의 벽 - 두쫀쿠 마려움)
+  else                   { min = 0.01; max = 0.02; } // 40~59 (지옥 - 쿠키 없으면 불가)
 
-  // 구간 내에서의 미세 조정 (강화가 높을수록 min에 가까워짐)
-  // 예: 30~49 구간에서 30강은 7%, 49강은 3%
-  var rangeSize = 5; 
-  if (curEnh >= 20) rangeSize = 10;
-  if (curEnh >= 30) rangeSize = 20;
-  if (curEnh >= 50) rangeSize = 30;
+  // 구간 내 미세 조정
+  var rangeSize = 5;
+  if (curEnh >= 20) rangeSize = 10; 
+  if (curEnh >= 40) rangeSize = 20;
 
-  var segmentPos = curEnh % rangeSize; 
-  var t = clamp01(segmentPos / rangeSize); // 0(구간초반) ~ 1(구간후반)
+  var segmentPos = curEnh % rangeSize;
+  var t = clamp01(segmentPos / rangeSize);
   var base = max - (max - min) * t;
 
-  // [레벨 보정] (최대 +5%)
+  // [레벨 보정] (최대 +8%)
+  // 40강 이후엔 레벨빨도 거의 안 받게 너프 (쿠키 가치 보존)
   var lv = trainerLv || 1;
-  var bonus = (lv - 1) * 0.0005; // 레벨당 0.05%
-  if (bonus > 0.05) bonus = 0.05;
-  
-  // 50강 이상부터는 레벨 보정도 절반으로 감소
-  if (curEnh >= 50) bonus *= 0.5;
+  var bonus = (lv - 1) * 0.0008; 
+  if (curEnh >= 40) bonus = 0; // 40강부터는 레벨 보정 없음 (순수 운 or 쿠키)
+  else if (bonus > 0.08) bonus = 0.08;
 
   var success = base + bonus;
 
-  // [희귀도 보정] 전설(5성)은 고강화에서 확률 소폭 보정 (+0.5%)
+  // [희귀도 보정] 전설(5성)은 30강 이후 아주 조금 보정
   if (rarity === 5 && curEnh >= 30) success += 0.005;
 
-  // 최종 확률 범위 제한 (최소 1%, 최대 100%)
   success = clamp01(success);
-  if (success < 0.01) success = 0.01; 
+  if (success < 0.01) success = 0.01; // 최소 1% 보장
 
   return { success: success, keep: 1 - success, death: 0 };
 }
