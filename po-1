@@ -66,13 +66,19 @@ var BATTLE_GOLD_WIN = 140;
 var BATTLE_GOLD_LOSE = 40;
 var BATTLE_EXP_WIN = 65;
 var BATTLE_EXP_LOSE = 30;
+
 // 승리 보너스(강화 +1)
 var BATTLE_BONUS_ENH_CHANCE = 0.07;
+
 // 볼 가격(상점)
 var SHOP_PRICE_BALL = 100;
 var SHOP_PRICE_SUPER = 500;
 var SHOP_PRICE_ULTRA = 1000;
 var SHOP_PRICE_DOPA = 20000;// 도파민강화권
+var SHOP_PRICE_COOKIE = 50000; // 두쫀쿠 (100% +1강)
+var SHOP_PRICE_TICKET = 5000;  // 이동 티켓 (원하는 지역 이동)
+var SHOP_PRICE_REROLL = 30000; // 등급 재설정권 (S~D 랜덤)
+
 // 타입 상성 재매핑 값(0->1, 0.5->1.5, 1->2, 2->3.5)
 var TYPE_STRONG = 4.4;
 // 데미지 강화 퍼센트 기여
@@ -724,7 +730,7 @@ function buildDexRankingWithMyRank(d, limit, myName) {
   };
 }
 
-// [수정됨] 등급/IV 데이터가 유실되지 않도록 보존하는 정규화 함수
+// [수정됨] 신규 아이템 필드 추가 (normalizeUserData)
 function normalizeUserData(u) {
   if (!u) return;
   
@@ -732,17 +738,26 @@ function normalizeUserData(u) {
   if (typeof u.trainerLv !== "number") u.trainerLv = 1;
   if (typeof u.trainerExp !== "number") u.trainerExp = 0;
   if (typeof u.gold !== "number") u.gold = 0;
+  
+  // [기존 볼]
   if (typeof u.ball !== "number") u.ball = 0;
   if (typeof u.superBall !== "number") u.superBall = 0;
   if (typeof u.ultraBall !== "number") u.ultraBall = 0;
-  if (typeof u.dopaTicket !== "number") u.dopaTicket = 0; // 도파민 티켓 추가 확인
+  
+  // [특수 아이템]
+  if (typeof u.dopaTicket !== "number") u.dopaTicket = 0; 
+  if (typeof u.cookie !== "number") u.cookie = 0;    // 두쫀쿠
+  if (typeof u.ticket !== "number") u.ticket = 0;    // 이동티켓
+  if (typeof u.reroll !== "number") u.reroll = 0;    // 재설정권
+  if (typeof u.nextFieldRegion !== "string") u.nextFieldRegion = ""; // 다음 이동 지역
+
   if (typeof u.lastAttendanceKey !== "string") u.lastAttendanceKey = "";
   if (!Array.isArray(u.pokemons)) u.pokemons = [];
   if (typeof u.nextPokeUid !== "number") u.nextPokeUid = 1;
   if (typeof u.catchFailStreak !== "number") u.catchFailStreak = 0;
   if (typeof u.lastCatchPid !== "number") u.lastCatchPid = 0;
 
-  // 2. 포켓몬 배열 정리 (여기서 데이터 삭제가 일어나지 않게 수정함)
+  // 2. 포켓몬 배열 정리 (데이터 보존)
   var fixed = [];
   for (var i = 0; i < u.pokemons.length; i++) {
     var p = u.pokemons[i];
@@ -755,18 +770,15 @@ function normalizeUserData(u) {
     if (!pid || !uid) continue;
     if (!findPokemonDB(pid)) continue;
 
-    // [핵심 수정] 기존에는 여기서 grade와 iv를 안 옮겨서 삭제되었음. 이제 포함시킴.
     var cleanObj = {
       uid: uid,
       pid: pid,
       enh: isNaN(enh) ? 0 : enh,
-      // 등급/IV가 있으면 그대로 유지, 없으면 나중에 ensurePokemonGrades가 채울 수 있게 undefined로 둠
       grade: p.grade,
       ivStr: p.ivStr,
       ivHp: p.ivHp,
       ivSpd: p.ivSpd
     };
-    
     fixed.push(cleanObj);
   }
   u.pokemons = fixed;
@@ -774,7 +786,6 @@ function normalizeUserData(u) {
   ensureUserStats(u);
   ensureUserDex(u);
 }
-
 
 // [강력 수정] 원본 배열을 확실하게 수정하고 저장 여부를 반환
 function ensurePokemonGrades(u) {
@@ -2182,73 +2193,53 @@ function rollDopaEnhance() {
 function shopText(d, u, sender) {
   return (
     sender + "님 현재 잔여 골드는 " + fmtNum(u.gold) + "💰 입니다\n\n" +
-    "판매 목록\n" +
-    "1) 몬스터볼 " + fmtNum(getShopPrice(d, "BALL")) + "💰\n" +
-    "2) 슈퍼볼 " + fmtNum(getShopPrice(d, "SUPER")) + "💰\n" +
-    "3) 하이퍼볼 " + fmtNum(getShopPrice(d, "ULTRA")) + "💰\n" +
-    "4) 도파민 " + fmtNum(getShopPrice(d, "DOPA")) + "💰\n\n" +
-    "구매 방법\n" +
-    "/구매 몬스터볼 5\n" +
-    "/구매 슈퍼볼 3\n" +
-    "/구매 하이퍼볼 1\n" +
-    "/구매 도파민 1"
+    "🏪 [상점 물품 목록]\n" +
+    "1. 몬스터볼 " + fmtNum(getShopPrice(d, "BALL")) + "💰\n" +
+    "2. 슈퍼볼 " + fmtNum(getShopPrice(d, "SUPER")) + "💰\n" +
+    "3. 하이퍼볼 " + fmtNum(getShopPrice(d, "ULTRA")) + "💰\n" +
+    "4. 도파민강화권 " + fmtNum(getShopPrice(d, "DOPA")) + "💰\n" +
+    "5. 두쫀쿠(확정강화) " + fmtNum(getShopPrice(d, "COOKIE") || SHOP_PRICE_COOKIE) + "💰\n" +
+    "6. 이동티켓 " + fmtNum(getShopPrice(d, "TICKET") || SHOP_PRICE_TICKET) + "💰\n" +
+    "7. 등급재설정권 " + fmtNum(getShopPrice(d, "REROLL") || SHOP_PRICE_REROLL) + "💰\n\n" +
+    "🛒 [구매 방법]\n" +
+    "/구매 몬스터볼 10\n" +
+    "/구매 두쫀쿠 1\n" +
+    "/구매 이동티켓 1\n" +
+    "/구매 재설정권 1"
   );
 }
-// -------------------- 구매 처리 함수 --------------------
+// [수정됨] 구매 처리 로직 업데이트
 function buyItem(d, u, sender, itemName, qty) {
   qty = parseInt(qty, 10);
-  if (isNaN(qty)) 
-    qty = 1;
+  if (isNaN(qty)) qty = 1;
   qty = Math.max(1, Math.min(999, qty));
+  
   var cost = 0;
   var field = "";
   var label = "";
-  if (itemName === "몬스터볼") {
-    cost = getShopPrice(d, "BALL") * qty;
-    field = "ball";
-    label = "몬스터볼";
-  } else if (itemName === "슈퍼볼") {
-    cost = getShopPrice(d, "SUPER") * qty;
-    field = "superBall";
-    label = "슈퍼볼";
-  } else if (itemName === "하이퍼볼") {
-    cost = getShopPrice(d, "ULTRA") * qty;
-    field = "ultraBall";
-    label = "하이퍼볼";
-  } else if (itemName === "도파민") {
-    cost = getShopPrice(d, "DOPA") * qty;
-    field = "dopaTicket";
-    label = "도파민";
-  } else {
-    return {
-  ok: false, 
-  reason: "구매 가능한 아이템: 몬스터볼/슈퍼볼/하이퍼볼/도파민"};
+  
+  // 아이템 매핑
+  if (itemName === "몬스터볼") { cost = getShopPrice(d, "BALL"); field = "ball"; label = "몬스터볼"; }
+  else if (itemName === "슈퍼볼") { cost = getShopPrice(d, "SUPER"); field = "superBall"; label = "슈퍼볼"; }
+  else if (itemName === "하이퍼볼") { cost = getShopPrice(d, "ULTRA"); field = "ultraBall"; label = "하이퍼볼"; }
+  else if (itemName === "도파민" || itemName === "도파민강화권") { cost = getShopPrice(d, "DOPA"); field = "dopaTicket"; label = "도파민강화권"; }
+  else if (itemName === "두쫀쿠" || itemName === "쿠키") { cost = getShopPrice(d, "COOKIE") || SHOP_PRICE_COOKIE; field = "cookie"; label = "두쫀쿠"; }
+  else if (itemName === "이동티켓" || itemName === "티켓") { cost = getShopPrice(d, "TICKET") || SHOP_PRICE_TICKET; field = "ticket"; label = "이동티켓"; }
+  else if (itemName === "재설정권" || itemName === "재설정") { cost = getShopPrice(d, "REROLL") || SHOP_PRICE_REROLL; field = "reroll"; label = "등급재설정권"; }
+  else {
+    return { ok: false, reason: "🚫 존재하지 않는 아이템입니다.\n(몬스터볼, 슈퍼볼, 하이퍼볼, 도파민, 두쫀쿠, 이동티켓, 재설정권)" };
   }
-  if (typeof u[field] !== "number") 
-    u[field] = 0;
-  if (typeof u.gold !== "number") 
-    u.gold = 0;
-  if (u.gold < cost) {
-  return {
-    ok: false,
-    reason:
-      sender + "님, 골드가 부족합니다.\n" +
-      "필요 골드: " + fmtNum(cost) + "💰\n" +
-      "보유 골드: " + fmtNum(u.gold) + "💰"
-  };
-}
 
-u.gold -= cost;
-u[field] += qty;
-commitSave(true);
+  if (u.gold < cost * qty) {
+    return { ok: false, reason: sender + "님, 골드가 부족합니다.\n필요: " + fmtNum(cost * qty) + "💰\n보유: " + fmtNum(u.gold) + "💰" };
+  }
 
-return {
-  ok: true,
-  msg:
-    sender + "님, " + label + " " + qty + "개 구매 완료하셨습니다.\n" +
-    "🎒 잔여 " + label + ": " + u[field] + "개\n" +
-    "💰 잔여 골드: " + fmtNum(u.gold) + "💰"
-};
+  u.gold -= cost * qty;
+  if (!u[field]) u[field] = 0;
+  u[field] += qty;
+  
+  commitSave(true);
+  return { ok: true, msg: "🛒 " + label + " " + qty + "개 구매 완료!\n💰 잔여 골드: " + fmtNum(u.gold) + "💰" };
 }
 // -------------------- 전적/랭크 --------------------
 function battleScoreRank(u) {
@@ -3448,53 +3439,57 @@ if (sub === "강화") {
     replier.reply(joinMsg);
     commitSave(true);
   }
+// -------------------- [수정됨] /내정보 (아이템 목록 제거) --------------------
   if (msg === "/내정보") {
     ensureUserStats(u);
     // EXP 진행률
     var need = expNeed(u.trainerLv);
     var cur = u.trainerExp;
     var pctExp = (need <= 0) ? 0 : Math.floor((cur / need) * 1000) / 10;
+    
     // 간단 진행 바 (10칸)
     var barN = 10;
     var filled = Math.max(0, Math.min(barN, Math.floor((cur / need) * barN)));
     var bar = "";
-    for (var i = 0; i < barN; i++) 
-      bar += (i < filled ? "■" : "□");
+    for (var i = 0; i < barN; i++) bar += (i < filled ? "■" : "□");
+    
     // 전적/랭크
     var w = u.stats.battleWin, l = u.stats.battleLose, d0 = u.stats.battleDraw;
     var total = w + l + d0;
     var winRate = (total === 0) ? 0 : Math.floor((w / total) * 1000) / 10;
-    // 도감 수집률 (누적 획득 기준)
+    
+    // 도감 수집률
     ensureUserDex(u);
     var uniqueCaught = 0;
     for (var i = 0; i < POKEMON_DB.length; i++) {
       var pid = String(POKEMON_DB[i].id);
-      var rec = u.dex[pid] || {
-  seen: 0, 
-  caught: 0};
-      if (rec.caught > 0) 
-        uniqueCaught++;
+      var rec = u.dex[pid] || { seen: 0, caught: 0 };
+      if (rec.caught > 0) uniqueCaught++;
     }
     var dexRate = (POKEMON_DB.length === 0) ? 0 : Math.floor((uniqueCaught / POKEMON_DB.length) * 1000) / 10;
+
     var out = "";
-    out += "트레이너 정보\n\n";
-    out += sender + "\n\n";
+    out += "👤 " + sender + "님의 트레이너 정보\n\n";
     out += "Lv." + u.trainerLv + " (" + pctExp + "%)\n";
     out += bar + "  " + cur + "/" + need + " EXP\n\n";
-    out += "재화\n";
-out += "골드: " + fmtNum(u.gold) + "💰\n";
-out += "도파민 강화권: " + (u.dopaTicket || 0) + "장\n";
-out += "몬스터볼: " + u.ball + " | 슈퍼볼: " + u.superBall + " | 하이퍼볼: " + u.ultraBall + "\n\n";
-    out += "컬렉션\n";
+    
+    out += "💰 재화: " + fmtNum(u.gold) + "💰\n";
+    out += "🎒 보유 아이템은 '/내가방'으로 확인하세요.\n\n";
+    
+    out += "🐾 컬렉션\n";
     out += "보유 포켓몬: " + u.pokemons.length + "마리\n";
     out += "도감: " + uniqueCaught + "/" + POKEMON_DB.length + " (" + dexRate + "%)\n\n";
-    out += "배틀\n";
+    
+    out += "⚔️ 배틀\n";
     out += "전적: " + w + "승 " + l + "패" + (d0 > 0 ? (" " + d0 + "무") : "") + "\n";
     out += "승률: " + winRate + "% | 연승: " + u.stats.battleStreak + " | 랭킹점수: " + battleScoreRank(u);
+    
     replier.reply(out);
     commitSave(false);
     return;
   }
+
+  // -------------------- [수정됨] /정보 (아이템 목록 제거) --------------------
   if (msg.indexOf("/정보") === 0) {
     var t = getTargetFromMsg(d, sender, msg, "/정보");
     if (!t) {
@@ -3503,50 +3498,167 @@ out += "몬스터볼: " + u.ball + " | 슈퍼볼: " + u.superBall + " | 하이�
     }
     var target = t.user;
     var targetName = t.name;
+    
     ensureUserStats(target);
     ensureUserDex(target);
+    
     // EXP 진행률
     var need = expNeed(target.trainerLv);
     var cur = target.trainerExp;
     var pctExp = (need <= 0) ? 0 : Math.floor((cur / need) * 1000) / 10;
-    // 간단 진행 바 (10칸)
+    
+    // 간단 진행 바
     var barN = 10;
     var filled = (need <= 0) ? 0 : Math.max(0, Math.min(barN, Math.floor((cur / need) * barN)));
     var bar = "";
-    for (var i = 0; i < barN; i++) 
-      bar += (i < filled ? "■" : "□");
-    // 전적/랭크
+    for (var i = 0; i < barN; i++) bar += (i < filled ? "■" : "□");
+    
+    // 전적
     var w = target.stats.battleWin, l = target.stats.battleLose, d0 = target.stats.battleDraw;
     var total = w + l + d0;
     var winRate = (total === 0) ? 0 : Math.floor((w / total) * 1000) / 10;
-    // 도감 수집률 (누적 획득 기준)
+    
+    // 도감
     var uniqueCaught = 0;
     for (var j = 0; j < POKEMON_DB.length; j++) {
       var pid = String(POKEMON_DB[j].id);
-      var rec = target.dex[pid] || {
-  seen: 0, 
-  caught: 0};
-      if (rec.caught > 0) 
-        uniqueCaught++;
+      var rec = target.dex[pid] || { seen: 0, caught: 0 };
+      if (rec.caught > 0) uniqueCaught++;
     }
     var dexRate = (POKEMON_DB.length === 0) ? 0 : Math.floor((uniqueCaught / POKEMON_DB.length) * 1000) / 10;
+
     var out = "";
-    out += "트레이너 정보\n\n";
-    out += targetName + "\n\n";
+    out += "👤 " + targetName + "님의 트레이너 정보\n\n";
     out += "Lv." + target.trainerLv + " (" + pctExp + "%)\n";
     out += bar + "  " + cur + "/" + need + " EXP\n\n";
-    out += "재화\n";
-out += "골드: " + target.gold + "💰\n";
-out += "도파민 강화권: " + (target.dopaTicket || 0) + "장\n";
-out += "몬스터볼: " + target.ball + " | 슈퍼볼: " + target.superBall + " | 하이퍼볼: " + target.ultraBall + "\n\n";
-    out += "컬렉션\n";
+    
+    out += "💰 재화: " + fmtNum(target.gold) + "💰\n";
+    // 타인 가방은 안 보여주는 게 깔끔합니다.
+    
+    out += "\n🐾 컬렉션\n";
     out += "보유 포켓몬: " + (target.pokemons ? target.pokemons.length : 0) + "마리\n";
     out += "도감: " + uniqueCaught + "/" + POKEMON_DB.length + " (" + dexRate + "%)\n\n";
-    out += "배틀\n";
+    
+    out += "⚔️ 배틀\n";
     out += "전적: " + w + "승 " + l + "패" + (d0 > 0 ? (" " + d0 + "무") : "") + "\n";
     out += "승률: " + winRate + "% | 연승: " + target.stats.battleStreak + " | 랭킹점수: " + battleScoreRank(target);
+    
     replier.reply(out);
     commitSave(false);
+    return;
+  }
+// -------------------- [신규] 내가방 (인벤토리) --------------------
+  if (msg === "/내가방") {
+    var list = "";
+    list += "🔴 몬스터볼: " + fmtNum(u.ball) + "개\n";
+    list += "🔵 슈퍼볼: " + fmtNum(u.superBall) + "개\n";
+    list += "⚫ 하이퍼볼: " + fmtNum(u.ultraBall) + "개\n";
+    list += "💳 도파민강화권: " + fmtNum(u.dopaTicket) + "장\n";
+    list += "🍪 두쫀쿠(확정강화): " + fmtNum(u.cookie) + "개\n";
+    list += "🎫 이동티켓: " + fmtNum(u.ticket) + "장\n";
+    list += "🔄 등급재설정권: " + fmtNum(u.reroll) + "장";
+
+    replier.reply("🎒 " + sender + "님의 가방\n━━━━━━━━━━━━━━\n" + list);
+    return;
+  }
+// -------------------- [신규] 아이템 사용 시스템 --------------------
+  if (msg.indexOf("/사용") === 0) {
+    var parts = msg.split(" ").filter(Boolean);
+    var itemCmd = parts[1]; // 두쫀쿠, 이동, 재설정
+
+    // 1. 두쫀쿠 (확정 +1강)
+    if (itemCmd === "두쫀쿠" || itemCmd === "쿠키") {
+      var uid = parseInt(parts[2], 10);
+      if (!uid) { replier.reply("사용법: /사용 두쫀쿠 [포켓몬UID]\n예: /사용 두쫀쿠 15"); return; }
+      
+      if (!u.cookie || u.cookie <= 0) { replier.reply("🍪 두쫀쿠가 없습니다. 상점에서 구매해주세요."); return; }
+      
+      var p = findUserPokemonByUid(u, uid);
+      if (!p) { replier.reply("해당 포켓몬을 찾을 수 없습니다."); return; }
+      if (p.enh >= 30) { replier.reply("이미 최대 강화(30강) 상태입니다."); return; }
+
+      u.cookie--;
+      p.enh++; // 100% 성공
+      
+      commitSave(true);
+      var db = findPokemonDB(p.pid);
+      replier.reply("🍪 냠냠... 두쫀쿠를 먹었습니다!\n\n✨ " + (db?db.name:"포켓몬") + " 강화 성공!\n🔥 " + (p.enh-1) + "강 → " + p.enh + "강");
+      return;
+    }
+
+    // 2. 이동티켓 (지역 이동)
+    if (itemCmd === "이동" || itemCmd === "티켓") {
+      var regionName = parts[2];
+      // 지역 목록 확인
+      var validRegions = REGIONS.map(function(r){ return r.key; });
+      
+      if (!regionName) {
+        replier.reply("사용법: /사용 이동 [지역명]\n🎫 갈 수 있는 지역:\n" + validRegions.join(", "));
+        return;
+      }
+      
+      // 유효한 지역인지 체크
+      var foundRegion = null;
+      for (var i=0; i<REGIONS.length; i++) {
+        if (REGIONS[i].key === regionName) { foundRegion = REGIONS[i].key; break; }
+      }
+      
+      if (!foundRegion) {
+        replier.reply("🚫 존재하지 않는 지역입니다.\n갈 수 있는 지역:\n" + validRegions.join(", "));
+        return;
+      }
+
+      if (!u.ticket || u.ticket <= 0) { replier.reply("🎫 이동티켓이 없습니다. 상점에서 구매해주세요."); return; }
+
+      u.ticket--;
+      u.nextFieldRegion = foundRegion; // 다음 필드 탐색 시 이 지역 확정
+      
+      commitSave(true);
+      replier.reply("🎫 티켓을 사용했습니다!\n\n🚀 다음 '/필드' 탐색 시 [" + foundRegion + "] 지역으로 이동합니다.");
+      return;
+    }
+
+    // 3. 재설정권 (등급/IV 랜덤 변경)
+    if (itemCmd === "재설정" || itemCmd === "재설정권") {
+      var uid = parseInt(parts[2], 10);
+      if (!uid) { replier.reply("사용법: /사용 재설정 [포켓몬UID]\n예: /사용 재설정 50"); return; }
+      
+      if (!u.reroll || u.reroll <= 0) { replier.reply("🔄 등급재설정권이 없습니다. 상점에서 구매해주세요."); return; }
+
+      var p = findUserPokemonByUid(u, uid);
+      if (!p) { replier.reply("해당 포켓몬을 찾을 수 없습니다."); return; }
+
+      u.reroll--;
+      
+      var oldGrade = p.grade || "D";
+      var newGrade = generatePokemonGrade(); // 랜덤 등급 생성
+      var newIVs = generateIVsByGrade(newGrade); // 해당 등급에 맞는 IV 생성
+      
+      // 데이터 갱신
+      p.grade = newGrade;
+      p.ivStr = newIVs.str;
+      p.ivHp = newIVs.hp;
+      p.ivSpd = newIVs.spd;
+
+      // 도감에도 갱신된 등급 반영
+      dexCaught(u, p.pid, newGrade);
+      
+      commitSave(true);
+      
+      var db = findPokemonDB(p.pid);
+      replier.reply(
+        "🔄 등급 재설정 완료!\n" + (db?db.name:"포켓몬") + "의 잠재력이 변화했습니다.\n\n" +
+        "기존: [" + oldGrade + "] 등급\n⬇️\n" +
+        "결과: 【 " + newGrade + " 】 등급\n\n" +
+        "📊 변경된 스탯\n" +
+        "⚔️ 힘: " + p.ivStr + "/15\n" +
+        "❤️ 체력: " + Math.floor(p.ivHp/10) + "/15\n" +
+        "⚡ 공속: " + p.ivSpd + "/15"
+      );
+      return;
+    }
+
+    replier.reply("사용법:\n/사용 두쫀쿠 [UID]\n/사용 이동 [지역명]\n/사용 재설정 [UID]");
     return;
   }
   // -------------------- [수정됨] /내포켓몬 (저장 확실시) --------------------
@@ -3815,7 +3927,7 @@ if (msg.indexOf("/판매") === 0) {
     }
     return;
   }
-    // -------------------- [수정] 필드 시스템 (중복 방지 및 냥치의방 제외) --------------------
+// -------------------- [수정됨] /필드 (이동 티켓 적용) --------------------
   if (msg === "/필드") {
     // 1. 현재 필드에 이미 포켓몬이 있는지 확인
     var currentWild = getWild(d, room);
@@ -3834,14 +3946,25 @@ if (msg.indexOf("/판매") === 0) {
     }
     u.lastFieldAt = now;
 
-    var region = getRoomRegion(d, room);
-    var safetyNet = 0;
-    while (region === "냥치의 방" && safetyNet < 10) {
+    var region = "";
+    
+    // [신규 기능] 이동 티켓을 사용해서 예약된 지역이 있는지 확인
+    if (u.nextFieldRegion) {
+      region = u.nextFieldRegion;
+      u.nextFieldRegion = ""; // 사용했으니 초기화 (1회성)
+      replier.reply("🚀 이동 티켓 효과 발동! [" + region + "] 지역에 도착했습니다.");
+    } else {
+      // 예약된 지역이 없으면 기존처럼 랜덤 (냥치의 방 제외 로직 포함)
       region = getRoomRegion(d, room);
-      safetyNet++;
+      var safetyNet = 0;
+      while (region === "냥치의 방" && safetyNet < 10) {
+        region = getRoomRegion(d, room);
+        safetyNet++;
+      }
+      if (region === "냥치의 방") region = REGIONS[0].key;
     }
-    if (region === "냥치의 방") region = REGIONS[0].key;
 
+    // 포켓몬 스폰
     var wild = spawnPokemonForRegion(region);
     setWild(d, room, wild.id);
     dexSeen(u, wild.id);
