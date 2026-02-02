@@ -4260,7 +4260,7 @@ function handleCatch(ballType, ballName, decoName) { // 3번째 인자로 decoNa
     var parts = msg.split(" ").filter(Boolean);
     var sub = parts[1]; // /칭호 [명령]
 
-    // 2. 칭호 도감 (조건은 비밀!)
+   // 2. 칭호 도감 (이름 공개 버전)
     if (sub === "도감") {
       var total = TITLE_DB.length;
       var collected = 0;
@@ -4269,11 +4269,13 @@ function handleCatch(ballType, ballName, decoName) { // 3번째 인자로 decoNa
       for (var i = 0; i < TITLE_DB.length; i++) {
         var t = TITLE_DB[i];
         var has = (u.titles.indexOf(t.name) !== -1);
+        
         if (has) {
           collected++;
           listStr += (i+1) + ". " + t.name + " (✅ 획득)\n";
         } else {
-          listStr += (i+1) + ". ??? (🔒 미획득)\n"; // 조건 숨김
+          // ▼▼▼ [수정됨] ??? 대신 이름을 보여줍니다 ▼▼▼
+          listStr += (i+1) + ". " + t.name + " (🔒 미획득)\n"; 
         }
       }
 
@@ -4282,7 +4284,7 @@ function handleCatch(ballType, ballName, decoName) { // 3번째 인자로 decoNa
         "🏷️ " + sender + "님의 칭호 도감\n" +
         "수집률: " + rate + "% (" + collected + "/" + total + ")\n\n" +
         listStr + "\n" +
-        "💡 칭호 획득 조건은 비밀입니다. 게임을 플레이하며 찾아보세요!"
+        "💡 칭호 이름을 보고 획득 조건을 유추해 보세요!"
       );
       return;
     }
