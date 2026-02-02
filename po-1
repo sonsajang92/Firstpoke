@@ -4348,7 +4348,7 @@ if (msg === "/배틀" || msg.indexOf("/배틀 ") === 0) {
   return;
 }
 
-// -------------------- /배틀연속 --------------------
+// -------------------- [수정됨] /배틀연속 (등급 반영 및 오류 수정) --------------------
 if (msg.indexOf("/배틀연속") === 0) {
   ensureUserStats(u);
 
@@ -4357,10 +4357,13 @@ if (msg.indexOf("/배틀연속") === 0) {
     return;
   }
 
+  // 1. [안전장치] 내 포켓몬 등급 없으면 즉시 생성 및 저장
+  if (ensurePokemonGrades(u)) saveData(d);
+
   // ✅ 시작 전에 참가 가능 여부 먼저 체크
   var myEligible0 = getBattleEligiblePokemons(u);
   if (myEligible0.length === 0) {
-    replier.reply("배틀 참가 조건: 20강 이상 포켓몬이 필요합니다.\n/강화 로 20강 이상을 만든 뒤 /배틀 을 시도해 주세요.");
+    replier.reply("배틀 참가 조건: " + BATTLE_MIN_ENH + "강 이상 포켓몬이 필요합니다.\n/강화 로 " + BATTLE_MIN_ENH + "강 이상을 만든 뒤 /배틀 을 시도해 주세요.");
     return;
   }
 
@@ -4385,10 +4388,11 @@ if (msg.indexOf("/배틀연속") === 0) {
   var lastFull = "";
 
   for (var i = 1; i <= n; i++) {
+    // runSingleBattle 함수가 이미 올바르게 수정되었다면 그대로 호출해도 됩니다.
+    // 단, 연속 배틀에서는 `opt` 객체를 통해 `isChain: true`를 전달해야 합니다.
     var rr = runSingleBattle(d, room, sender, u, null, {
       isChain: true,
-      rewardMult: chainRewardMult(i),
-      record: false
+      rewardMult: chainRewardMult(i)
     });
 
     if (!rr.ok) {
@@ -4402,6 +4406,11 @@ if (msg.indexOf("/배틀연속") === 0) {
     else if (rr.result === -1) lose++;
     else draw++;
 
+    // 보상 파싱 로직 대신 runSingleBattle이 반환하는 값을 사용하는 것이 좋을 수도 있지만,
+    // 현재 구조상 runSingleBattle은 보상을 직접 지급하고 summary만 반환하므로
+    // parseRewardLine을 사용하여 보상 총합을 계산합니다.
+    // (주의: runSingleBattle 내부에서 이미 u.gold 등을 증가시켰으므로 여기서 또 더하면 중복 지급됨!)
+    // 따라서 여기서는 totalGold, totalExp는 '통계용'으로만 사용합니다.
     var reward = parseRewardLine(rr.summary);
     totalGold += reward.gold;
     totalExp += reward.exp;
@@ -4433,15 +4442,17 @@ if (msg.indexOf("/배틀연속") === 0) {
     blockTitle("연속 배틀 결과") +
     sender + "님 " + done + "연전\n" +
     "요약: " + win + "승 " + lose + "패" + (draw ? (" " + draw + "무") : "") + "\n" +
-    "연속 배틀 보상: +" + fmtNum(totalGold) + "💰 / +" + fmtNum(totalExp) + "EXP\n\n" +
+    "연속 배틀 보상 합계: +" + fmtNum(totalGold) + "💰 / +" + fmtNum(totalExp) + "EXP\n\n" +
     "전체보기로 마지막 배틀 상세 로그를 확인하세요.";
 
+  // 모든 배틀이 끝난 후 한 번 저장
   commitSave(true);
 
   var fullOut = lastFull ? ("\n\n[마지막 배틀 로그]\n" + lastFull) : "";
   replyFold(replier, head + "\n\n" + allSummary.trim(), fullOut);
   return;
 }
+
   if (msg === "/배틀디버그") {
     debugBattle(d, sender, MATCH_POOL, replier);
     return;
