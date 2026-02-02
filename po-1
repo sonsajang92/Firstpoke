@@ -75,7 +75,7 @@ var SHOP_PRICE_BALL = 100;
 var SHOP_PRICE_SUPER = 500;
 var SHOP_PRICE_ULTRA = 1000;
 var SHOP_PRICE_DOPA = 20000;// 도파민강화권
-var SHOP_PRICE_COOKIE = 50000; // 두쫀쿠 (100% +1강)
+var SHOP_PRICE_COOKIE = 300000; // 두쫀쿠 (100% +1강)
 var SHOP_PRICE_TICKET = 5000;  // 이동 티켓 (원하는 지역 이동)
 var SHOP_PRICE_REROLL = 30000; // 등급 재설정권 (S~D 랜덤)
 
