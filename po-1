@@ -748,7 +748,7 @@ function normalizeUserData(u) {
   if (typeof u.dopaTicket !== "number") u.dopaTicket = 0; 
   if (typeof u.cookie !== "number") u.cookie = 0;    // 두쫀쿠
   if (typeof u.ticket !== "number") u.ticket = 0;    // 이동티켓
-  if (typeof u.reroll !== "number") u.reroll = 0;    // 재설정권
+  if (typeof u.reroll !== "number") u.reroll = 0;    // 티어리셋권
   if (typeof u.nextFieldRegion !== "string") u.nextFieldRegion = ""; // 다음 이동 지역
 
   if (typeof u.lastAttendanceKey !== "string") u.lastAttendanceKey = "";
@@ -2200,12 +2200,12 @@ function shopText(d, u, sender) {
     "4. 도파민강화권 " + fmtNum(getShopPrice(d, "DOPA")) + "💰\n" +
     "5. 두쫀쿠(확정강화) " + fmtNum(getShopPrice(d, "COOKIE") || SHOP_PRICE_COOKIE) + "💰\n" +
     "6. 이동티켓 " + fmtNum(getShopPrice(d, "TICKET") || SHOP_PRICE_TICKET) + "💰\n" +
-    "7. 등급재설정권 " + fmtNum(getShopPrice(d, "REROLL") || SHOP_PRICE_REROLL) + "💰\n\n" +
+    "7. 티어리셋권 " + fmtNum(getShopPrice(d, "REROLL") || SHOP_PRICE_REROLL) + "💰\n\n" +
     "🛒 [구매 방법]\n" +
     "/구매 몬스터볼 10\n" +
     "/구매 두쫀쿠 1\n" +
     "/구매 이동티켓 1\n" +
-    "/구매 재설정권 1"
+    "/구매 티어리셋 1"
   );
 }
 // [수정됨] 구매 처리 로직 업데이트
@@ -2225,9 +2225,13 @@ function buyItem(d, u, sender, itemName, qty) {
   else if (itemName === "도파민" || itemName === "도파민강화권") { cost = getShopPrice(d, "DOPA"); field = "dopaTicket"; label = "도파민강화권"; }
   else if (itemName === "두쫀쿠" || itemName === "쿠키") { cost = getShopPrice(d, "COOKIE") || SHOP_PRICE_COOKIE; field = "cookie"; label = "두쫀쿠"; }
   else if (itemName === "이동티켓" || itemName === "티켓") { cost = getShopPrice(d, "TICKET") || SHOP_PRICE_TICKET; field = "ticket"; label = "이동티켓"; }
-  else if (itemName === "재설정권" || itemName === "재설정") { cost = getShopPrice(d, "REROLL") || SHOP_PRICE_REROLL; field = "reroll"; label = "등급재설정권"; }
+  else if (itemName === "티어리셋" || itemName === "티어" || itemName === "리셋") { 
+    cost = getShopPrice(d, "REROLL") || SHOP_PRICE_REROLL; 
+    field = "reroll"; 
+    label = "티어리셋권"; 
+  }
   else {
-    return { ok: false, reason: "🚫 존재하지 않는 아이템입니다.\n(몬스터볼, 슈퍼볼, 하이퍼볼, 도파민, 두쫀쿠, 이동티켓, 재설정권)" };
+    return { ok: false, reason: "🚫 존재하지 않는 아이템입니다.\n(몬스터볼, 슈퍼볼, 하이퍼볼, 도파민, 두쫀쿠, 이동티켓, 티어리셋)" };
   }
 
   if (u.gold < cost * qty) {
@@ -3548,6 +3552,7 @@ if (sub === "강화") {
     return;
   }
 // -------------------- [신규] 내가방 (인벤토리) --------------------
+// -------------------- [수정됨] 내가방 (티어리셋 적용) --------------------
   if (msg === "/내가방") {
     var list = "";
     list += "🔴 몬스터볼: " + fmtNum(u.ball) + "개\n";
@@ -3556,7 +3561,7 @@ if (sub === "강화") {
     list += "💳 도파민강화권: " + fmtNum(u.dopaTicket) + "장\n";
     list += "🍪 두쫀쿠(확정강화): " + fmtNum(u.cookie) + "개\n";
     list += "🎫 이동티켓: " + fmtNum(u.ticket) + "장\n";
-    list += "🔄 등급재설정권: " + fmtNum(u.reroll) + "장";
+    list += "🔄 티어리셋권: " + fmtNum(u.reroll) + "장";
 
     replier.reply("🎒 " + sender + "님의 가방\n━━━━━━━━━━━━━━\n" + list);
     return;
@@ -3618,12 +3623,12 @@ if (sub === "강화") {
       return;
     }
 
-    // 3. 재설정권 (등급/IV 랜덤 변경)
-    if (itemCmd === "재설정" || itemCmd === "재설정권") {
+// 3. 티어리셋권 (등급/IV 랜덤 변경)
+    if (itemCmd === "티어리셋" || itemCmd === "티어" || itemCmd === "리셋") {
       var uid = parseInt(parts[2], 10);
-      if (!uid) { replier.reply("사용법: /사용 재설정 [포켓몬UID]\n예: /사용 재설정 50"); return; }
+      if (!uid) { replier.reply("사용법: /사용 티어리셋 [포켓몬UID]\n예: /사용 티어리셋 50"); return; }
       
-      if (!u.reroll || u.reroll <= 0) { replier.reply("🔄 등급재설정권이 없습니다. 상점에서 구매해주세요."); return; }
+      if (!u.reroll || u.reroll <= 0) { replier.reply("🔄 티어리셋권이 없습니다. 상점에서 구매해주세요."); return; }
 
       var p = findUserPokemonByUid(u, uid);
       if (!p) { replier.reply("해당 포켓몬을 찾을 수 없습니다."); return; }
@@ -3647,7 +3652,7 @@ if (sub === "강화") {
       
       var db = findPokemonDB(p.pid);
       replier.reply(
-        "🔄 등급 재설정 완료!\n" + (db?db.name:"포켓몬") + "의 잠재력이 변화했습니다.\n\n" +
+        "🔄 티어 리셋 완료!\n" + (db?db.name:"포켓몬") + "의 잠재력이 변화했습니다.\n\n" +
         "기존: [" + oldGrade + "] 등급\n⬇️\n" +
         "결과: 【 " + newGrade + " 】 등급\n\n" +
         "📊 변경된 스탯\n" +
