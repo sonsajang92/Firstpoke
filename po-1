@@ -4144,22 +4144,29 @@ if (msg.indexOf("/판매") === 0) {
     return;
   }
    
-  function handleCatch(ballType, ballName) {
-  var wild = getWild(d, room); //
-  if (!wild) { //
-    var ex = takeExpiredWild(d, room); //
-    if (ex) { //
-      var dbx = findPokemonDB(ex.pid); //
-      var name = dbx ? dbx.name : "야생 포켓몬"; //
-      commitSave(false); //
-      if (ex.byEscape) replier.reply(name + "에게서 이미 도망쳤습니다.\n/필드 로 다시 탐색해 주세요."); //
-      else replier.reply(name + "가(이) 도망갔습니다.\n/필드 로 다시 탐색해 주세요."); //
-      return; //
+function handleCatch(ballType, ballName, decoName) { // 3번째 인자로 decoName 받기
+  var wild = getWild(d, room);
+  if (!wild) {
+    var ex = takeExpiredWild(d, room);
+    if (ex) {
+      var dbx = findPokemonDB(ex.pid);
+      var name = dbx ? dbx.name : "야생 포켓몬";
+      commitSave(false);
+      
+      // ▼▼▼ [수정됨] decoName 적용 ▼▼▼
+      if (ex.byEscape) {
+        replier.reply(sayDo(decoName, name + "에게서 이미 도망쳤습니다.") + "\n/필드 로 다시 탐색해 주세요.");
+      } else {
+        // "손사장님이 야생 포켓몬을(를) 놓쳤습니다..." 느낌으로 변경
+        replier.reply(sayDo(decoName, name + "을(를) 놓쳤습니다. (도망감)") + "\n/필드 로 다시 탐색해 주세요.");
+      }
+      // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+      return;
     }
-    replier.reply(sayDo(decoName, "현재 야생 포켓몬이 없습니다.") + "\n/필드 로 탐색해 주세요."); //
-    return; //
+    // 여기는 이미 잘 바꾸셨네요!
+    replier.reply(sayDo(decoName, "현재 야생 포켓몬이 없습니다.") + "\n/필드 로 탐색해 주세요.");
+    return;
   }
-
   if (typeof wild.attempts !== "number") wild.attempts = 0; //
   if (typeof wild.maxAttempts !== "number") wild.maxAttempts = getMaxCatchAttempts(wild.pid); //
 
@@ -4236,18 +4243,9 @@ if (msg.indexOf("/판매") === 0) {
   return; //
 }
   
-  if (msg === "/몬스터볼" || msg === "/몬" || msg === "/ㅁ") {
-    handleCatch(0, "몬스터볼");
-    return;
-  }
-  if (msg === "/슈퍼볼" || msg === "/슈" || msg === "/ㅅ") {
-    handleCatch(1, "슈퍼볼");
-    return;
-  }
-  if (msg === "/하이퍼볼" || msg === "/하" || msg === "/ㅎ") {
-    handleCatch(2, "하이퍼볼");
-    return;
-  }
+  if (msg === "/몬스터볼" || msg === "/몬" || msg === "/ㅁ") { handleCatch(0, "몬스터볼", decoName); return; }
+  if (msg === "/슈퍼볼" || msg === "/슈" || msg === "/ㅅ") { handleCatch(1, "슈퍼볼", decoName); return; }
+  if (msg === "/하이퍼볼" || msg === "/하" || msg === "/ㅎ") { handleCatch(2, "하이퍼볼", decoName); return; }
 
 
 // -------------------- [신규] 칭호 & 칭호도감 --------------------
