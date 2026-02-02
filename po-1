@@ -49,6 +49,9 @@ var CATCH_GOLD_MIN = 35;
 var CATCH_GOLD_MAX = 85;
 var CATCH_EXP_MIN = 12;
 var CATCH_EXP_MAX = 26;
+// [신규] 이로치(Shiny) 확률 (0.005 = 0.5%)
+var SHINY_PROBABILITY = 100;
+
 // 포획 보상 안전 캡(경제 폭주 방지)
 var CATCH_GOLD_CAP = 220;
 var CATCH_EXP_CAP = 80;
@@ -646,6 +649,7 @@ function findPokemonDBByName(name) {
   return null;
 }
 // [4단계 수정] 전투력 계산 (힘/공속 IV 반영)
+// [수정됨] 전투력 계산 (이로치 10% 보너스 적용)
 function calcBattlePower(p) {
   var db = findPokemonDB(p.pid);
   if (!db) return 0;
@@ -653,12 +657,20 @@ function calcBattlePower(p) {
   var base = db.basePower || 1;
   var enh = p.enh || 0;
   
-  // 개체값 보너스: 힘(ivStr)과 공속(ivSpd)을 더함
+  // 개체값 보너스
   var ivBonus = (p.ivStr || 0) + (p.ivSpd || 0); 
   
-  // (기본파워 + 개체값) 기준에 강화 배율을 곱함
-  return Math.floor((base + ivBonus) * (1 + enh * 0.15));
+  // 기본 전투력 계산
+  var power = Math.floor((base + ivBonus) * (1 + enh * 0.15));
+
+  // ★ [이로치 특전] 전투력 1.2배 증가!
+  if (p.shiny) {
+    power = Math.floor(power * 1.2); 
+  }
+
+  return power;
 }
+
 
 //전투력 기준 정렬
 function sortPokemonsByPower(list) {
@@ -791,10 +803,11 @@ function normalizeUserData(u) {
       uid: uid,
       pid: pid,
       enh: isNaN(enh) ? 0 : enh,
-      grade: p.grade,
-      ivStr: p.ivStr,
-      ivHp: p.ivHp,
-      ivSpd: p.ivSpd
+      grade: p.grade || "D",
+      ivStr: p.ivStr || 0,
+      ivHp: p.ivHp || 0,
+      ivSpd: p.ivSpd || 0,
+      shiny: !!p.shiny // 🔥 [필수] 이 줄을 추가해야 삭제되지 않습니다!
     };
     fixed.push(cleanObj);
   }
@@ -941,7 +954,6 @@ function ensurePokemonGrades(u) {
   
   return isChanged; // 변경사항이 있었다면 true
 }
-
 
 function findUserPokemonByUid(u, uid) {
   uid = parseInt(uid, 10);
@@ -1187,17 +1199,22 @@ function calcHP(db, enh, ivHp) {
 }
 
 // [1단계] 개체값(IV) 반영 데미지 공식
+// [수정됨] 배틀 판정 (이로치 데미지 10% 증가 적용)
 function calcHit(attDb, attP, defDb, defP, trainerLvAtt, trainerLvDef) {
-  // attP, defP: 포켓몬 객체 (enh, ivStr, ivSpd 포함)
-  
-  // 1. 데미지 계산에 힘(ivStr) 반영
+  // 1. 기본 데미지 계산
   var base = calcDamage(attDb, attP.enh, defDb, defP.enh);
   
-  // 개체값 보너스: (힘 IV * 1.5)% 만큼 최종 데미지 증가
+  // 개체값(IV) 보너스: 힘 스탯 반영
   var strBonus = 1 + ((attP.ivStr || 0) * 0.015); 
+
+  // ★ [이로치 특전] 빛나는 오라! 데미지 10% 추가 (1.1배)
+  if (attP.shiny) {
+    strBonus *= 1.1; 
+  }
+
   base.score = Math.floor(base.score * strBonus);
 
-  // 2. 회피율 계산에 공속(ivSpd) 반영 (상대 공속이 높으면 회피 어려움)
+  // 2. 회피율 계산 (공속 반영)
   var spdDiff = (defP.ivSpd || 0) - (attP.ivStr || 0); 
   var dodge = 0.10 
     + clamp(((trainerLvDef || 1) - (trainerLvAtt || 1)) * 0.0008, -0.03, 0.03) 
@@ -1209,6 +1226,10 @@ function calcHit(attDb, attP, defDb, defP, trainerLvAtt, trainerLvDef) {
   // 3. 방어/크리 계산
   var guard = 0.12 + clamp(defP.enh * 0.002, 0, 0.04);
   var crit = 0.12 + clamp(attP.enh * 0.001, 0, 0.03) + ((attP.ivSpd || 0) * 0.003);
+  
+  // 이로치는 크리티컬 확률도 아주 살짝(2%) 높여줄까요? (선택사항)
+  if (attP.shiny) crit += 0.02; 
+
   crit = clamp(crit, 0.10, 0.25);
 
   var swing = rnd(0.88, 1.12);
@@ -1647,7 +1668,7 @@ function buildEnhResultMsg(sender, pName, before, after, resultType) {
   }
   
   var afterLabel = (resultType === ENH_RESULT_EXIT) ? "이탈" : enhLabelAlways(after);
-  var header = "🐾 " + sayDo(decoName, pName + " 훈련 결과") + "\n" + "📊 강화 단계: " + enhLabelAlways(before) + " → " + afterLabel + "\n\n";
+  var header = "🐾 " + sayDo(sender, pName + " 훈련 결과") + "\n" + "📊 강화 단계: " + enhLabelAlways(before) + " → " + afterLabel + "\n\n";
   return header + line;
 }
 function pct(x) {
@@ -2218,14 +2239,17 @@ function takeExpiredWild(d, room) {
   }
   return null;
 }
-function setWild(d, room, pid) {
+function setWild(d, room, pid, isShiny) {
   d.lastSpawnByRoom[room] = {
-  pid: pid, 
-  at: nowMs(), 
-  expiresAt: nowMs() + SPAWN_EXPIRE_MS, 
-  attempts: 0, 
-  maxAttempts: getMaxCatchAttempts(pid)};
+    pid: pid,
+    at: nowMs(),
+    expiresAt: nowMs() + SPAWN_EXPIRE_MS,
+    attempts: 0,
+    maxAttempts: getMaxCatchAttempts(pid),
+    isShiny: !!isShiny // ★ 이로치 여부 저장
+  };
 }
+
 function clearWild(d, room) {
   delete d.lastSpawnByRoom[room];
 }
@@ -2878,26 +2902,36 @@ function generateIVsByGrade(grade) {
 
 
 // -------------------- 포획 유틸 --------------------
-// -------------------- [수정] 포켓몬 생성 로직 --------------------
-function addPokemonToUser(u, pid) {
+// [최종 디버그용] 저장 함수
+// [최종 완료] 이로치 저장 함수 (디버그 메시지 제거됨)
+function addPokemonToUser(u, pid, isShiny) { 
   var uid = nextPokemonUid(u);
-  var grade = generatePokemonGrade(); // 등급 생성
-  var ivs = generateIVsByGrade(grade); // 등급에 따른 개체값 생성
+  var grade = generatePokemonGrade();
+  var ivs = generateIVsByGrade(grade);
 
   u.pokemons.push({
     uid: uid,
     pid: pid,
     enh: 0,
-    grade: grade,    // 등급 저장
-    ivStr: ivs.str,  // 힘 IV
-    ivHp: ivs.hp,    // 체력 IV
-    ivSpd: ivs.spd   // 공속 IV
+    grade: grade,
+    ivStr: ivs.str,
+    ivHp: ivs.hp,
+    ivSpd: ivs.spd,
+    shiny: !!isShiny // 이로치 저장 필수!
   });
 
-  // dexCaught에 등급(grade) 정보도 함께 전달
-  dexCaught(u, pid, grade); 
-  
-  return uid; // 중요: UID를 반환해야 포획 메시지에 ID가 뜹니다.
+  dexCaught(u, pid, grade);
+  return uid;
+}
+
+// [신규] 이름 앞에 별 붙여주는 함수
+function getDisplayName(p) {
+  var db = findPokemonDB(p.pid);
+  var name = db ? db.name : "알수없음";
+  if (p.shiny) {
+    return "✨" + name; 
+  }
+  return name;
 }
 
 // 희귀도: 1(흔함) ~ 5(전설)
@@ -2980,7 +3014,7 @@ function calcCatchRewards(u, pid) {
 // 전설 연출 문구
 function legendaryCatchFX(sender, name, r) {
   // r: calcCatchRewards 결과
-  return (blockTitle("전설 포획") + "✨ " + sayDo(decoName, "전설급 " + name + "을(를) 포획했어요!") + "\n\n" + "🎆 특수 보상 발생!\n" + "추가 보상: +" + r.bonusGold + "💰 / +" + r.bonusExp + "EXP\n\n");
+  return (blockTitle("전설 포획") + "✨ " + sayDo(sender, "전설급 " + name + "을(를) 포획했어요!") + "\n\n" + "🎆 특수 보상 발생!\n" + "추가 보상: +" + r.bonusGold + "💰 / +" + r.bonusExp + "EXP\n\n");
 }
 function getMaxCatchAttempts(pid) {
   var db = findPokemonDB(pid);
@@ -3819,39 +3853,39 @@ var decoName = getDecoratedName(u, sender);
     replier.reply("사용법:\n/사용 두쫀쿠 [UID]\n/사용 이동 [지역명]\n/사용 재설정 [UID]");
     return;
   }
-  // -------------------- [수정됨] /내포켓몬 (저장 확실시) --------------------
+  
+  // -------------------- [수정됨] /내포켓몬 (이로치 표시) --------------------
   if (msg === "/내포켓몬") {
     if (!u.pokemons || u.pokemons.length === 0) {
       replier.reply(sender + "님은 보유한 포켓몬이 없습니다.");
       return;
     }
-
-    // 1. 등급이 없으면 부여하고, 변경사항이 있으면 "강제 저장"
-    var needSave = ensurePokemonGrades(u);
-    if (needSave) {
-      saveData(d); // ★ 파일에 즉시 저장
-      // (테스트용) 저장했다는 사실을 알 수 있게 로그를 띄울 수도 있음
-      // replier.reply("[시스템] 구형 포켓몬 데이터를 신형(등급제)으로 변환하여 저장했습니다.");
-    }
+    
+    ensurePokemonGrades(u);
 
     var summary = "🎒 " + sender + "님의 보유 포켓몬\n" + "총 " + u.pokemons.length + "마리\n\n" + "전체보기로 목록을 확인하세요.";
     var full = "\n\n[보유 포켓몬 목록]\n\n";
     
-    // 2. 저장된 데이터를 정렬 (여기서는 값 변경 절대 없음)
-    // sortPokemonsByPower가 원본을 건드리지 않도록 slice()로 복사본 사용
     var listCopy = u.pokemons.slice(); 
     var sorted = sortPokemonsByPower(listCopy);
 
     for (var i = 0; i < sorted.length; i++) {
       var p = sorted[i];
       var power = calcBattlePower(p);
-      var dbp = findPokemonDB(p.pid);
-      var name = dbp ? dbp.name : "알수없음";
-      var enh = (p.enh && p.enh > 0) ? (p.enh + "강") : "0강";
-      // 이제 p.grade는 무조건 파일에서 불러온 고정값이어야 함
-      var grade = p.grade || "D"; 
       
-      full += (i + 1) + ". #" + p.uid + " " + name + " " + enh + " | 전투력 " + power + " | [" + grade + "등급]\n";
+      // ★ 1. 이로치 별(✨) 붙이기 (이 함수가 있어야 별이 보임!)
+      var name = getDisplayName(p); 
+      
+      var enh = (p.enh && p.enh > 0) ? (p.enh + "강") : "0강";
+      var grade = p.grade || "D";
+      
+      // ★ 2. S등급 왕관(👑) 붙이기
+      var gradeStr = "[" + grade + "등급]";
+      if (grade === "S") {
+        gradeStr += " 👑"; 
+      }
+      
+      full += (i + 1) + ". #" + p.uid + " " + name + " " + enh + " | 전투력 " + power + " | " + gradeStr + "\n";
     }
 
     replyFold(replier, summary, full);
@@ -3997,7 +4031,7 @@ if (msg.indexOf("/판매") === 0) {
 } // ✅ 여기 추가: if ("/판매") 블록 닫기
 
  if (msg === "/도움") {
-  var summary = "죠봇 포켓몬 명령어\n\n";
+  var summary = "죠봇 포켓몬 명령어(확인용)\n\n";
   summary += "자주 쓰는 명령어\n";
   summary += "/필드 /몬 /슈 /하 /도망(/ㅌㅌ)\n";
   summary += "/내포켓몬 /강화 /도파민\n";
@@ -4085,13 +4119,17 @@ if (msg.indexOf("/판매") === 0) {
     }
     return;
   }
-// -------------------- [수정됨] /필드 (이동 티켓 적용) --------------------
+  // -------------------- [수정됨] /필드 (이동 티켓 + 이로치 적용) --------------------
   if (msg === "/필드") {
     // 1. 현재 필드에 이미 포켓몬이 있는지 확인
     var currentWild = getWild(d, room);
     if (currentWild) {
       var dbWild = findPokemonDB(currentWild.pid);
-      replier.reply("⚠️ 이미 필드에 " + dbWild.name + "가 나타나 있습니다!\n포획하시거나 /도망(/ㅌㅌ) 후에 다시 탐색해주세요.");
+      var wildName = dbWild ? dbWild.name : "포켓몬";
+      // 이로치면 이름 앞에 별 붙여주기
+      if (currentWild.isShiny) wildName = "✨" + wildName;
+      
+      replier.reply("⚠️ 이미 필드에 " + wildName + "가 나타나 있습니다!\n포획하시거나 /도망(/ㅌㅌ) 후에 다시 탐색해주세요.");
       return;
     }
 
@@ -4106,13 +4144,12 @@ if (msg.indexOf("/판매") === 0) {
 
     var region = "";
     
-    // [신규 기능] 이동 티켓을 사용해서 예약된 지역이 있는지 확인
+    // 이동 티켓 확인
     if (u.nextFieldRegion) {
       region = u.nextFieldRegion;
-      u.nextFieldRegion = ""; // 사용했으니 초기화 (1회성)
+      u.nextFieldRegion = ""; 
       replier.reply("🚀 이동 티켓 효과 발동! [" + region + "] 지역에 도착했습니다.");
     } else {
-      // 예약된 지역이 없으면 기존처럼 랜덤 (냥치의 방 제외 로직 포함)
       region = getRoomRegion(d, room);
       var safetyNet = 0;
       while (region === "냥치의 방" && safetyNet < 10) {
@@ -4124,11 +4161,25 @@ if (msg.indexOf("/판매") === 0) {
 
     // 포켓몬 스폰
     var wild = spawnPokemonForRegion(region);
-    setWild(d, room, wild.id);
+    
+    // ▼▼▼ [신규] 이로치 판정 로직 ▼▼▼
+    var isShiny = (Math.random() < SHINY_PROBABILITY);
+    
+    // 야생 데이터 저장 (이로치 여부 포함)
+    setWild(d, room, wild.id, isShiny); 
+    // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
     dexSeen(u, wild.id);
     commitSave(true);
 
     var dbw = findPokemonDB(wild.id);
+    
+    // ▼▼▼ [신규] 이로치 전용 연출 메시지 ▼▼▼
+    var shinyLine = "";
+    if (isShiny) {
+      shinyLine = "✨✨✨ 띠리링~! 색이 다른 포켓몬입니다! ✨✨✨\n";
+    }
+    
     var rareLine = "";
     if (dbw && dbw.rarity === 5) {
       rareLine = sayDo(decoName, pick(EMPHASIS_RARE5)) + "\n" + pick(EMPHASIS_LEGENDARY) + "\n\n";
@@ -4137,10 +4188,11 @@ if (msg.indexOf("/판매") === 0) {
     var ballLine = "🎒 보유 볼\n" + "- 몬스터볼: " + u.ball + "\n" + "- 슈퍼볼: " + u.superBall + "\n" + "- 하이퍼볼: " + u.ultraBall + "\n\n";
     var guide = "🎯 포획: /몬(/ㅁ), /슈(/ㅅ), /하(/ㅎ)\n" + "🏃 도망: /도망(/ㅌㅌ)\n" + "⏳ " + Math.floor(SPAWN_EXPIRE_MS / 1000) + "초 안에 선택";
     
-    replier.reply(sayDo(decoName, pick(FIELD_SEARCH_LINES)) + "\n\n" + "[지역: " + region + "]\n\n" + rareLine + "⚡ " + sayDo(decoName, dbw.name + " 와(과) 마주쳤어요!") + "\n" + pick(FIELD_ENCOUNTER_LINES) + "\n\n" + ballLine + guide);
+    // 메시지 조합 (shinyLine 추가됨)
+    replier.reply(sayDo(decoName, pick(FIELD_SEARCH_LINES)) + "\n\n" + "[지역: " + region + "]\n\n" + shinyLine + rareLine + "⚡ " + sayDo(decoName, dbw.name + " 와(과) 마주쳤어요!") + "\n" + pick(FIELD_ENCOUNTER_LINES) + "\n\n" + ballLine + guide);
     return;
   }
-  
+
      // -------------------- [교정] 도망 시스템 (/ㅌㅌ 통합 및 안전 장치) --------------------
   if (msg === "/도망" || msg === "/ㅌㅌ") {
     // 1. 현재 방의 야생 포켓몬 데이터 가져오기
@@ -4172,63 +4224,59 @@ if (msg.indexOf("/판매") === 0) {
     return;
   }
    
-function handleCatch(ballType, ballName, decoName) { // 3번째 인자로 decoName 받기
+// [복구 완료] 포획 담당 함수
+function handleCatch(ballType, ballName, decoName) {
   var wild = getWild(d, room);
+  
   if (!wild) {
     var ex = takeExpiredWild(d, room);
     if (ex) {
       var dbx = findPokemonDB(ex.pid);
       var name = dbx ? dbx.name : "야생 포켓몬";
       commitSave(false);
-      
-      // ▼▼▼ [수정됨] decoName 적용 ▼▼▼
-      if (ex.byEscape) {
-        replier.reply(sayDo(decoName, name + "에게서 이미 도망쳤습니다.") + "\n/필드 로 다시 탐색해 주세요.");
-      } else {
-        // "손사장님이 야생 포켓몬을(를) 놓쳤습니다..." 느낌으로 변경
-        replier.reply(sayDo(decoName, name + "을(를) 놓쳤습니다. (도망감)") + "\n/필드 로 다시 탐색해 주세요.");
-      }
-      // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+      replier.reply(sayDo(decoName, name + "을(를) 놓쳤습니다. (도망감)"));
       return;
     }
-    // 여기는 이미 잘 바꾸셨네요!
     replier.reply(sayDo(decoName, "현재 야생 포켓몬이 없습니다.") + "\n/필드 로 탐색해 주세요.");
     return;
   }
-  if (typeof wild.attempts !== "number") wild.attempts = 0; //
-  if (typeof wild.maxAttempts !== "number") wild.maxAttempts = getMaxCatchAttempts(wild.pid); //
 
-  if (!consumeBall(u, ballType)) { //
-    replier.reply(ballName + "이(가) 부족합니다.\n/상점 에서 구매할 수 있습니다."); //
-    return; //
+  if (typeof wild.attempts !== "number") wild.attempts = 0;
+  if (typeof wild.maxAttempts !== "number") wild.maxAttempts = getMaxCatchAttempts(wild.pid);
+
+  if (!consumeBall(u, ballType)) {
+    replier.reply(ballName + "이(가) 부족합니다.\n/상점 에서 구매할 수 있습니다.");
+    return;
   }
 
-  var leftBallsLine = "잔여 볼: 몬스터볼 " + u.ball + " | 슈퍼볼 " + u.superBall + " | 하이퍼볼 " + u.ultraBall; //
-  var t = tryCatch(u, wild.pid, ballType); //
-  if (!t.ok) { //
-    saveData(d); //
-    replier.reply("포획 처리 중 오류가 발생했습니다."); //
-    return; //
+  var t = tryCatch(u, wild.pid, ballType);
+  
+  if (!t.ok) {
+    saveData(d);
+    replier.reply("포획 처리 중 오류가 발생했습니다.");
+    return;
   }
 
-  var db = findPokemonDB(wild.pid); //
+  var db = findPokemonDB(wild.pid);
 
-  // ==================== [수정된 성공 블록: 15점 만점 표기] ====================
+  // 성공 시
   if (t.success) {
     clearWild(d, room); 
-    var uid = addPokemonToUser(u, wild.pid); 
-    var p = findUserPokemonByUid(u, uid); // 방금 잡은 포켓몬 정보 가져오기
+    
+    // ★ 복구된 addPokemonToUser 사용 (이로치 전달)
+    var uid = addPokemonToUser(u, wild.pid, wild.isShiny); 
+    
+    var p = findUserPokemonByUid(u, uid); 
     var reward = calcCatchRewards(u, wild.pid); 
     u.gold += reward.totalGold; 
-    var lvMsg = addExpWithLevelUpMsg(u, reward.totalExp); 
+    addExpWithLevelUpMsg(u, reward.totalExp); 
     commitSave(true); 
 
     var fx = ""; 
     if (reward.legendary) fx = legendaryCatchFX(sender, db.name, reward); 
+    if (wild.isShiny) fx += "✨✨✨ 이로치 포켓몬 포획 성공! ✨✨✨\n";
 
-    // [UI 개선] 체력은 내부적으로 크지만(150), 보여줄 땐 15점 만점으로 환산
     var showHp = Math.floor((p.ivHp || 0) / 10); 
-    // 0점 방지 (최소 1)
     if (showHp < 1) showHp = 1;
 
     var catchResultMsg = 
@@ -4243,38 +4291,35 @@ function handleCatch(ballType, ballName, decoName) { // 3번째 인자로 decoNa
       "━━━━━━━━━━━━━━\n" +
       "🧬 내 포켓몬 ID #" + uid + "\n" +
       "💰 보상: +" + fmtNum(reward.totalGold) + "💰 / +" + reward.totalExp + "EXP\n" +
-      (lvMsg ? ("\n" + lvMsg) : "") + "\n" +
       pick(CATCH_SUCCESS_LINES); 
 
     replier.reply(catchResultMsg); 
     return; 
   }
-  // ==================== [기존 실패 로직 유지] ====================
-  wild.attempts += 1; //
-  var leftTry = Math.max(0, wild.maxAttempts - wild.attempts); //
-  var SAFE_FAILS = 2; //
-  var escapePressure = 0; //
-  if (wild.attempts > SAFE_FAILS) { //
-    escapePressure = (wild.attempts - SAFE_FAILS) * 0.05; //
-  }
-  if (escapePressure > 0.35) escapePressure = 0.35; //
-  if (wild.attempts >= wild.maxAttempts || Math.random() < escapePressure) { //
-    wild.byEscape = true; //
-    clearWild(d, room); //
-    commitSave(true); //
-    var escName = db ? db.name : "야생 포켓몬"; //
-    replier.reply("💨 " + escName + "이(가) 경계심을 느끼고 도망쳤습니다!\n\n" + "🎯 포획 시도: " + wild.attempts + "/" + wild.maxAttempts + "\n" + "/필드 로 다시 탐색해 주세요."); //
-    return; //
-  }
-  commitSave(true); //
-  replier.reply(blockTitle("포획 실패") + "💥 " + sayDo(decoName, db.name + " 포획에 실패했어요.") + "\n\n" + pick(CATCH_FAIL_DRIP_LINES) + "\n\n" + leftBallsLine + "\n\n🎯 남은 포획 기회: " + leftTry + "회" + "\n\n💡 " + pick(CATCH_FAIL_TIP_LINES) + "\n\n" + "🎯 포획\n" + "/몬 또는 /ㅁ  → 몬스터볼\n" + "/슈 또는 /ㅅ  → 슈퍼볼\n" + "/하 또는 /ㅎ  → 하이퍼볼\n\n" + "🏃 도망: /도망"); //
-  return; //
-}
   
+  // 실패 시
+  wild.attempts++; 
+  var leftTry = Math.max(0, wild.maxAttempts - wild.attempts);
+  var escapePressure = 0; 
+  if (wild.attempts > 2) escapePressure = (wild.attempts - 2) * 0.05; 
+  if (escapePressure > 0.35) escapePressure = 0.35; 
+  
+  if (wild.attempts >= wild.maxAttempts || Math.random() < escapePressure) { 
+    wild.byEscape = true; 
+    clearWild(d, room); 
+    commitSave(true); 
+    replier.reply("💨 " + (db?db.name:"포켓몬") + "이(가) 도망쳤습니다!\n/필드 로 다시 탐색해 주세요."); 
+    return; 
+  }
+  
+  commitSave(true); 
+  replier.reply(blockTitle("포획 실패") + "💥 " + sayDo(decoName, db.name + " 포획에 실패했어요.") + "\n\n" + pick(CATCH_FAIL_DRIP_LINES) + "\n\n" + "🎯 남은 기회: " + leftTry + "회" + "\n\n💡 " + pick(CATCH_FAIL_TIP_LINES) + "\n\n" + "🎯 포획\n" + "/몬 또는 /ㅁ  → 몬스터볼\n" + "/슈 또는 /ㅅ  → 슈퍼볼\n" + "/하 또는 /ㅎ  → 하이퍼볼\n\n" + "🏃 도망: /도망"); 
+  return; 
+}
+
   if (msg === "/몬스터볼" || msg === "/몬" || msg === "/ㅁ") { handleCatch(0, "몬스터볼", decoName); return; }
   if (msg === "/슈퍼볼" || msg === "/슈" || msg === "/ㅅ") { handleCatch(1, "슈퍼볼", decoName); return; }
   if (msg === "/하이퍼볼" || msg === "/하" || msg === "/ㅎ") { handleCatch(2, "하이퍼볼", decoName); return; }
-
 
 // -------------------- [신규] 칭호 & 칭호도감 --------------------
   if (msg.indexOf("/칭호") === 0) {
@@ -4480,7 +4525,7 @@ if (Math.random() < 0.10) {
     if (gotPoke) {
       var found = spawnPokemonForRegion(region2);
       dexSeen(u, found.id);
-      var uid2 = addPokemonToUser(u, found.id);
+      var uid2 = addPokemonNew(u, found.id);
       var db2 = findPokemonDB(found.id);
       pokeLog = "🐾 야생 포켓몬 발견!\n" + db2.name + " (#" + uid2 + ") 가 합류했습니다!";
     }
@@ -4956,6 +5001,17 @@ if (msg.indexOf("/랭킹") === 0) {
   replier.reply("알 수 없는 랭킹 명령입니다.\n사용법: /랭킹 도감  /랭킹 전투력  /랭킹 배틀");
   return;
 }
+  
+  // 디버그용 (확인 후 삭제하세요)
+  if (msg === "/디버그") {
+    if (u.pokemons.length === 0) {
+      replier.reply("포켓몬이 없습니다.");
+      return;
+    }
+    // 가장 최근에 잡은 포켓몬의 '원본 데이터'를 봅니다.
+    var lastPoke = u.pokemons[u.pokemons.length - 1]; 
+    replier.reply("마지막 포켓몬 데이터:\n" + JSON.stringify(lastPoke));
+  }
   
   
 }
