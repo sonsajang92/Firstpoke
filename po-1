@@ -957,6 +957,24 @@ function ensurePokemonGrades(u) {
   
   return isChanged; // 변경사항이 있었다면 true
 }
+// [신규] 포켓몬 ID로 어울리는 지역 찾기
+function getRecommendedRegion(pid) {
+  var db = findPokemonDB(pid);
+  if (!db) return REGIONS[0].key;
+
+  var t1 = db.type1;
+  var t2 = db.type2;
+
+  // 지역별 타입 매칭 확인
+  for (var i = 0; i < REGIONS.length; i++) {
+    var r = REGIONS[i];
+    if (r.key === "냥치의 방") continue; // 냥치의 방은 제외
+    if (r.types.indexOf(t1) !== -1 || (t2 && r.types.indexOf(t2) !== -1)) {
+      return r.key;
+    }
+  }
+  return REGIONS[0].key; // 못 찾으면 기본 초원
+}
 
 function findUserPokemonByUid(u, uid) {
   uid = parseInt(uid, 10);
@@ -4174,8 +4192,9 @@ if (msg.indexOf("/판매") === 0) {
     }
     return;
   }
-// -------------------- [수정됨] /필드 (이동 티켓 + 이로치 + 관리자 예약 적용) --------------------
+// -------------------- [최종 통합] /필드 (지역 자동 매칭 + 관리자 예약) --------------------
   if (msg === "/필드") {
+    // 1. 중복 스폰 및 쿨타임 체크 (기존 유지)
     var currentWild = getWild(d, room);
     if (currentWild) {
       var dbWild = findPokemonDB(currentWild.pid);
@@ -4195,50 +4214,56 @@ if (msg.indexOf("/판매") === 0) {
     u.lastFieldAt = now;
 
     var region = "";
-    if (u.nextFieldRegion) {
+    var wildData;
+    var forcedShiny = false;
+
+    // 2. 지역 결정 및 스폰 로직 (예약 우선 순위)
+    if (u.nextSpawnPid && u.nextSpawnPid > 0) {
+      // [A] 관리자 예약 스폰일 때
+      wildData = findPokemonDB(u.nextSpawnPid);
+      forcedShiny = !!u.nextSpawnShiny;
+      
+      // 예약된 포켓몬 타입에 맞는 지역으로 강제 배정
+      region = getRecommendedRegion(u.nextSpawnPid);
+      
+      u.nextSpawnPid = 0;   // 사용 완료 후 초기화
+      u.nextSpawnShiny = false;
+      u.nextFieldRegion = ""; // 티켓 예약 무시
+      
+      // 예약 스폰 전용 자연스러운 지역 이동 멘트
+      replier.reply("🏃 주변을 탐색하다가 새로운 지역 [" + region + "]에 들어섰습니다...");
+
+    } else if (u.nextFieldRegion) {
+      // [B] 이동 티켓 예약이 있을 때
       region = u.nextFieldRegion;
       u.nextFieldRegion = ""; 
+      wildData = spawnPokemonForRegion(region);
+      forcedShiny = (Math.random() < (SHINY_PROBABILITY / 100));
       replier.reply("🚀 이동 티켓 효과 발동! [" + region + "] 지역에 도착했습니다.");
+
     } else {
+      // [C] 일반 랜덤 스폰
       region = getRoomRegion(d, room);
+      // 냥치의 방 안전장치
       var safetyNet = 0;
       while (region === "냥치의 방" && safetyNet < 10) {
         region = getRoomRegion(d, room);
         safetyNet++;
       }
       if (region === "냥치의 방") region = REGIONS[0].key;
-    }
-
-    // ==================== [여기서부터 바뀐 스폰 로직] ====================
-    var wildData;
-    var forcedShiny = false;
-
-    if (u.nextSpawnPid && u.nextSpawnPid > 0) {
-      // 1. 관리자 예약 발동 (조용히 처리)
-      wildData = findPokemonDB(u.nextSpawnPid);
-      forcedShiny = !!u.nextSpawnShiny;
       
-      u.nextSpawnPid = 0;   // 사용 완료 후 초기화
-      u.nextSpawnShiny = false;
-    } else {
-      // 2. 일반 랜덤 스폰
       wildData = spawnPokemonForRegion(region);
-      forcedShiny = (Math.random() < (SHINY_PROBABILITY / 100)); // 확률 계산 (백분율 기준)
+      forcedShiny = (Math.random() < (SHINY_PROBABILITY / 100));
     }
 
-    // 야생 데이터 저장
+    // 3. 야생 데이터 저장 및 도감 반영
     setWild(d, room, wildData.id, forcedShiny);
-    // ====================================================================
-
     dexSeen(u, wildData.id);
     commitSave(true);
 
+    // 4. 연출 메시지 구성
     var dbw = findPokemonDB(wildData.id);
-    
-    var shinyLine = "";
-    if (forcedShiny) { // forcedShiny 변수 사용
-      shinyLine = "✨✨✨ 띠리링~! 색이 다른 포켓몬입니다! ✨✨✨\n";
-    }
+    var shinyLine = forcedShiny ? "✨✨✨ 띠리링~! 색이 다른 포켓몬입니다! ✨✨✨\n" : "";
     
     var rareLine = "";
     if (dbw && dbw.rarity === 5) {
@@ -4248,10 +4273,17 @@ if (msg.indexOf("/판매") === 0) {
     var ballLine = "🎒 보유 볼\n" + "- 몬스터볼: " + u.ball + "\n" + "- 슈퍼볼: " + u.superBall + "\n" + "- 하이퍼볼: " + u.ultraBall + "\n\n";
     var guide = "🎯 포획: /몬(/ㅁ), /슈(/ㅅ), /하(/ㅎ)\n" + "🏃 도망: /도망(/ㅌㅌ)\n" + "⏳ " + Math.floor(SPAWN_EXPIRE_MS / 1000) + "초 안에 선택";
     
-    replier.reply(sayDo(decoName, pick(FIELD_SEARCH_LINES)) + "\n\n" + "[지역: " + region + "]\n\n" + shinyLine + rareLine + "⚡ " + sayDo(decoName, dbw.name + " 와(과) 마주쳤어요!") + "\n" + pick(FIELD_ENCOUNTER_LINES) + "\n\n" + ballLine + guide);
+    // 최종 출력
+    replier.reply(
+      sayDo(decoName, pick(FIELD_SEARCH_LINES)) + "\n\n" + 
+      "[지역: " + region + "]\n\n" + 
+      shinyLine + rareLine + 
+      "⚡ " + sayDo(decoName, dbw.name + " 와(과) 마주쳤어요!") + "\n" + 
+      pick(FIELD_ENCOUNTER_LINES) + "\n\n" + 
+      ballLine + guide
+    );
     return;
   }
-
      // -------------------- [교정] 도망 시스템 (/ㅌㅌ 통합 및 안전 장치) --------------------
   if (msg === "/도망" || msg === "/ㅌㅌ") {
     // 1. 현재 방의 야생 포켓몬 데이터 가져오기
