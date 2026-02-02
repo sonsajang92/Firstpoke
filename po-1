@@ -1548,26 +1548,6 @@ function enhanceRatesByRarity(nextEnh, trainerLv, rarity) {
   return { success: success, keep: 1 - success, death: 0 };
 }
 
-  // =========================
-  // ✅ 성공 확률 "미세" 하향 (체감 약하게)
-  // - 15강부터 아주 살짝
-  // - 20강부터 조금 더
-  // - 25강부터 추가로 살짝
-  // =========================
-  if (curEnh >= 15) success -= 0.005; // -0.5%
-  if (curEnh >= 20) success -= 0.010; // 추가 -1.0% (누적 -1.5%)
-  if (curEnh >= 25) success -= 0.010; // 추가 -1.0% (누적 -2.5%)
-
-  // rarity 5 완충 (25강 이상만 약간 복구)
-  if (rarity === 5 && curEnh >= 25) success += 0.005;
-
-  // 최종 안전 보정
-  success = clamp01(success);
-  return {
-  success: success, 
-  keep: 1 - success, 
-  death: 0};
-}
 function buildNextEnhInfoLine(p, resultType, u) {
   if (resultType === ENH_RESULT_EXIT) {
     return "\n\n📌 다른 포켓몬을 강화하려면 /내포켓몬 을 확인해 주세요.";
@@ -1589,11 +1569,12 @@ function buildNextEnhInfoLine(p, resultType, u) {
   var myGold = (u && typeof u.gold === "number") ? u.gold : null;
 
   var out = "";
-out += "\n\n현재 보유 골드 : " + (myGold === null ? "-" : (fmtNum(myGold) + "💰")) + "\n";
-out += "다음 강화 성공 확률 : " + pct(rates.success) + "%\n";
-out += "다음 강화 필요 골드 : " + fmtNum(nextCost) + "💰";
-return out;
+  out += "\n\n현재 보유 골드 : " + (myGold === null ? "-" : (fmtNum(myGold) + "💰")) + "\n";
+  out += "다음 강화 성공 확률 : " + pct(rates.success) + "%\n";
+  out += "다음 강화 필요 골드 : " + fmtNum(nextCost) + "💰";
+  return out;
 }
+
 
 // 탐험 포켓몬 획득 확률 (레벨 기반)
 function getExplorePokemonChance(trainerLv) {
