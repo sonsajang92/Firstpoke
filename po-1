@@ -782,6 +782,9 @@ function normalizeUserData(u) {
   if (typeof u.stats.totalDopaReset !== "number") u.stats.totalDopaReset = 0;   // 도파민 초기화 횟수
   if (typeof u.stats.totalDopaDestroy !== "number") u.stats.totalDopaDestroy = 0; // 도파민 파괴 횟수
   if (typeof u.stats.totalEscapes !== "number") u.stats.totalEscapes = 0; // 도망 횟수
+  if (typeof u.nextSpawnPid !== "number") u.nextSpawnPid = 0; // 0이면 예약 없음
+if (typeof u.nextSpawnPid !== "number") u.nextSpawnPid = 0;
+if (typeof u.nextSpawnShiny !== "boolean") u.nextSpawnShiny = false; // 이로치 예약용
 
   if (typeof u.lastAttendanceKey !== "string") u.lastAttendanceKey = "";
   if (!Array.isArray(u.pokemons)) u.pokemons = [];
@@ -3528,6 +3531,31 @@ if (sub === "강화") {
       replier.reply("포켓몬 지급 완료\n\n" + "대상: " + tP.name + "\n" + "포켓몬: " + nm + "\n" + "UID: #" + newUid);
       return;
     }
+if (sub === "스폰예약" || sub === "스폰") {
+      var targetName = parts[2];
+      var pokeKey = parts[3]; 
+      var shinyOpt = parts[4]; // Y 또는 N (선택사항)
+      
+      if (!targetName || !pokeKey) {
+        replier.reply("사용법: /관리자 스폰 [닉네임] [포켓몬명/ID] [이로치(Y/N)]");
+        return;
+      }
+
+      var t = getUserByName(d, targetName);
+      if (!t) { replier.reply("대상 유저를 찾을 수 없습니다."); return; }
+
+      var dbp = isNaN(parseInt(pokeKey)) ? findPokemonDBByName(pokeKey) : findPokemonDB(pokeKey);
+      if (!dbp) { replier.reply("해당 포켓몬을 찾을 수 없습니다."); return; }
+
+      t.user.nextSpawnPid = dbp.id;
+      // Y라고 적으면 무조건 이로치, 아니면 일반
+      t.user.nextSpawnShiny = (shinyOpt === "Y" || shinyOpt === "y"); 
+      
+      addAdminLog(d, sender, "스폰예약 " + t.name + " -> " + dbp.name + (t.user.nextSpawnShiny ? "(✨)" : ""));
+      commitSave(true);
+      replier.reply("✅ " + t.name + "님에게 [" + dbp.name + (t.user.nextSpawnShiny ? "✨" : "") + "] 예약 완료.");
+      return;
+    }
     if (sub === "포켓몬삭제") {
       var tn5 = parts[2];
       var uidStr = (parts[3] || "").replace("#", "").trim();
@@ -4146,16 +4174,13 @@ if (msg.indexOf("/판매") === 0) {
     }
     return;
   }
-  // -------------------- [수정됨] /필드 (이동 티켓 + 이로치 적용) --------------------
+// -------------------- [수정됨] /필드 (이동 티켓 + 이로치 + 관리자 예약 적용) --------------------
   if (msg === "/필드") {
-    // 1. 현재 필드에 이미 포켓몬이 있는지 확인
     var currentWild = getWild(d, room);
     if (currentWild) {
       var dbWild = findPokemonDB(currentWild.pid);
       var wildName = dbWild ? dbWild.name : "포켓몬";
-      // 이로치면 이름 앞에 별 붙여주기
       if (currentWild.isShiny) wildName = "✨" + wildName;
-      
       replier.reply("⚠️ 이미 필드에 " + wildName + "가 나타나 있습니다!\n포획하시거나 /도망(/ㅌㅌ) 후에 다시 탐색해주세요.");
       return;
     }
@@ -4170,8 +4195,6 @@ if (msg.indexOf("/판매") === 0) {
     u.lastFieldAt = now;
 
     var region = "";
-    
-    // 이동 티켓 확인
     if (u.nextFieldRegion) {
       region = u.nextFieldRegion;
       u.nextFieldRegion = ""; 
@@ -4186,24 +4209,34 @@ if (msg.indexOf("/판매") === 0) {
       if (region === "냥치의 방") region = REGIONS[0].key;
     }
 
-    // 포켓몬 스폰
-    var wild = spawnPokemonForRegion(region);
-    
-    // ▼▼▼ [신규] 이로치 판정 로직 ▼▼▼
-    var isShiny = (Math.random() < SHINY_PROBABILITY);
-    
-    // 야생 데이터 저장 (이로치 여부 포함)
-    setWild(d, room, wild.id, isShiny); 
-    // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+    // ==================== [여기서부터 바뀐 스폰 로직] ====================
+    var wildData;
+    var forcedShiny = false;
 
-    dexSeen(u, wild.id);
+    if (u.nextSpawnPid && u.nextSpawnPid > 0) {
+      // 1. 관리자 예약 발동 (조용히 처리)
+      wildData = findPokemonDB(u.nextSpawnPid);
+      forcedShiny = !!u.nextSpawnShiny;
+      
+      u.nextSpawnPid = 0;   // 사용 완료 후 초기화
+      u.nextSpawnShiny = false;
+    } else {
+      // 2. 일반 랜덤 스폰
+      wildData = spawnPokemonForRegion(region);
+      forcedShiny = (Math.random() < (SHINY_PROBABILITY / 100)); // 확률 계산 (백분율 기준)
+    }
+
+    // 야생 데이터 저장
+    setWild(d, room, wildData.id, forcedShiny);
+    // ====================================================================
+
+    dexSeen(u, wildData.id);
     commitSave(true);
 
-    var dbw = findPokemonDB(wild.id);
+    var dbw = findPokemonDB(wildData.id);
     
-    // ▼▼▼ [신규] 이로치 전용 연출 메시지 ▼▼▼
     var shinyLine = "";
-    if (isShiny) {
+    if (forcedShiny) { // forcedShiny 변수 사용
       shinyLine = "✨✨✨ 띠리링~! 색이 다른 포켓몬입니다! ✨✨✨\n";
     }
     
@@ -4215,7 +4248,6 @@ if (msg.indexOf("/판매") === 0) {
     var ballLine = "🎒 보유 볼\n" + "- 몬스터볼: " + u.ball + "\n" + "- 슈퍼볼: " + u.superBall + "\n" + "- 하이퍼볼: " + u.ultraBall + "\n\n";
     var guide = "🎯 포획: /몬(/ㅁ), /슈(/ㅅ), /하(/ㅎ)\n" + "🏃 도망: /도망(/ㅌㅌ)\n" + "⏳ " + Math.floor(SPAWN_EXPIRE_MS / 1000) + "초 안에 선택";
     
-    // 메시지 조합 (shinyLine 추가됨)
     replier.reply(sayDo(decoName, pick(FIELD_SEARCH_LINES)) + "\n\n" + "[지역: " + region + "]\n\n" + shinyLine + rareLine + "⚡ " + sayDo(decoName, dbw.name + " 와(과) 마주쳤어요!") + "\n" + pick(FIELD_ENCOUNTER_LINES) + "\n\n" + ballLine + guide);
     return;
   }
