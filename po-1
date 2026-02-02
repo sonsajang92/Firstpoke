@@ -37,7 +37,7 @@ function fmtAny(v) {
 var DATA_PATH = "/sdcard/mbot_pokemon_db.json";
 // -------------------- 밸런스(표준) --------------------
 var MAX_LV = 150;
-var ENHANCE_MAX = 30;
+var ENHANCE_MAX = 100;
 var FIELD_COOLDOWN_MS = 10 * 1000;// /필드 10초
 var EXPLORE_COOLDOWN_MS = 1 * 1000;// /탐험 55초
 var ENHANCE_COOLDOWN_MS = 4 * 1000;// /강화 4초
@@ -846,12 +846,13 @@ var ENH_RESULT_UP = "UP";
 var ENH_RESULT_KEEP = "KEEP";
 var ENH_RESULT_EXIT = "EXIT";
 var ENH_RESULT_DOWN = "DOWN";// 딱히 안쓰일 예정
+
 function getEnhTier(enh) {
-  if (enh < 10) 
-    return "EASY";
-  if (enh < 20) 
-    return "MID";
-  return "HARD";
+  if (enh < 10) return "EASY";
+  if (enh < 20) return "MID";
+  if (enh < 50) return "HARD";
+  if (enh < 80) return "HELL";
+  return "GOD";
 }
 // -------------------- 출석 보상 테이블 --------------------
 var ATTENDANCE_STREAK_REWARD = {
@@ -1454,35 +1455,41 @@ var ENH_DOWN_MID = ["훈련 부담이 그대로 드러났습니다.", "포켓몬
 var ENH_DOWN_HARD = ["💢 한계에 크게 부딪혔습니다.", "🔥 위험한 훈련이었어요.", "⚠️ 상태가 눈에 띄게 나빠졌습니다."];
 // ---------- 이탈 (완화된 사망) ----------
 var ENH_EXIT_LINES = ["포켓몬이 훈련을 더 이상 이어가기 힘든 상태입니다.", "큰 부담이 누적되어 훈련에서 이탈했습니다.", "지금은 휴식과 회복이 필요한 상태예요.", "무리한 훈련으로 더 이상 동행할 수 없게 되었습니다."];
+// ---------- 헬 갓? ----------
+var ENH_UP_HELL = ["🔥 불가능을 가능으로 만들었습니다!", "🩸 피와 땀으로 만든 결과입니다!", "🔱 신화적인 힘이 깃들기 시작합니다."];
+var ENH_UP_GOD = ["👑 이것은 기적입니다! 전설의 탄생!", "🌌 우주가 당신을 돕고 있습니다!", "🌟 서버의 역사를 새로 씁니다!"];
+var ENH_KEEP_HELL = ["💀 심장이 멈출 뻔했습니다... 유지 성공.", "🛡️ 파괴되지 않은 것만으로도 다행입니다.", "💢 벽이 너무나도 높습니다."];
+var ENH_KEEP_GOD = ["🌌 신의 영역은 쉽게 허락되지 않습니다.", "🧘 무사한 것에 감사하십시오.", "🌫️ 허공에 골드를 뿌렸지만, 포켓몬은 무사합니다."];
+var ENH_DOWN_HELL = ["🩸 뼈아픈 실패... 단계가 하락했습니다.", "📉 정점에서 미끄러졌습니다.", "💔 욕심이 과했던 걸까요..."];
+var ENH_DOWN_GOD = ["☄️ 추락하는 것은 날개가 있다...", "📉 신의 분노를 샀습니다.", "🌑 다시 밑바닥부터 기어올라가야 합니다."];
 
 // -------------------- 강화 결과 멘트 빌더 --------------------
 function buildEnhResultMsg(sender, pName, before, after, resultType) {
   var tier = getEnhTier(before);
   var line = "";
+  
   if (resultType === ENH_RESULT_UP) {
-    if (tier === "EASY") 
-      line = pick(ENH_UP_EASY);
-    else if (tier === "MID") 
-      line = pick(ENH_UP_MID);
-    else 
-      line = pick(ENH_UP_HARD);
+    if (tier === "EASY") line = pick(ENH_UP_EASY);
+    else if (tier === "MID") line = pick(ENH_UP_MID);
+    else if (tier === "HARD") line = pick(ENH_UP_HARD);
+    else if (tier === "HELL") line = pick(ENH_UP_HELL);
+    else line = pick(ENH_UP_GOD);
   } else if (resultType === ENH_RESULT_KEEP) {
-    if (tier === "EASY") 
-      line = pick(ENH_KEEP_EASY);
-    else if (tier === "MID") 
-      line = pick(ENH_KEEP_MID);
-    else 
-      line = pick(ENH_KEEP_HARD);
+    if (tier === "EASY") line = pick(ENH_KEEP_EASY);
+    else if (tier === "MID") line = pick(ENH_KEEP_MID);
+    else if (tier === "HARD") line = pick(ENH_KEEP_HARD);
+    else if (tier === "HELL") line = pick(ENH_KEEP_HELL);
+    else line = pick(ENH_KEEP_GOD);
   } else if (resultType === ENH_RESULT_DOWN) {
-    if (tier === "EASY") 
-      line = pick(ENH_DOWN_EASY);
-    else if (tier === "MID") 
-      line = pick(ENH_DOWN_MID);
-    else 
-      line = pick(ENH_DOWN_HARD);
+    if (tier === "EASY") line = pick(ENH_DOWN_EASY);
+    else if (tier === "MID") line = pick(ENH_DOWN_MID);
+    else if (tier === "HARD") line = pick(ENH_DOWN_HARD);
+    else if (tier === "HELL") line = pick(ENH_DOWN_HELL);
+    else line = pick(ENH_DOWN_GOD);
   } else if (resultType === ENH_RESULT_EXIT) {
     line = pick(ENH_EXIT_LINES);
   }
+  
   var afterLabel = (resultType === ENH_RESULT_EXIT) ? "이탈" : enhLabelAlways(after);
   var header = "🐾 " + sayDo(sender, pName + " 훈련 결과") + "\n" + "📊 강화 단계: " + enhLabelAlways(before) + " → " + afterLabel + "\n\n";
   return header + line;
@@ -1493,58 +1500,55 @@ function pct(x) {
 function clamp01(x) {
   return Math.max(0, Math.min(1, x));
 }
-// nextEnh: 이번 시도로 도달하려는 강화 단계(1~30)
+
+// [수정됨] 100강 확장 확률 테이블
 function enhanceRatesByRarity(nextEnh, trainerLv, rarity) {
   nextEnh = parseInt(nextEnh, 10);
-  if (isNaN(nextEnh)) 
-    nextEnh = 1;
-  if (nextEnh < 1) 
-    nextEnh = 1;
-  if (nextEnh > ENHANCE_MAX) 
-    nextEnh = ENHANCE_MAX;
-  var curEnh = nextEnh - 1;  // 현재 강화(0~29)
-  // 요구사항 구간 (min~max)
-  var min = 0.90, max = 1.00;  // 0~5강
-  if (curEnh >= 5 && curEnh < 10) {
-    min = 0.70;
-    max = 0.80;
-  } else if (curEnh >= 10 && curEnh < 15) {
-    min = 0.50;
-    max = 0.60;
-  } else if (curEnh >= 15 && curEnh < 20) {
-    min = 0.30;
-    max = 0.40;
-  } else if (curEnh >= 20 && curEnh < 25) {
-    min = 0.20;
-    max = 0.30;
-  } else if (curEnh >= 25) {
-    min = 0.05;
-    max = 0.10;
-  }
-  var segStart = 0;
-  if (curEnh >= 5 && curEnh < 10) 
-    segStart = 5;
-  else if (curEnh >= 10 && curEnh < 15) 
-    segStart = 10;
-  else if (curEnh >= 15 && curEnh < 20) 
-    segStart = 15;
-  else if (curEnh >= 20 && curEnh < 25) 
-    segStart = 20;
-  else if (curEnh >= 25) 
-    segStart = 25;
-  var t = clamp01((curEnh - segStart) / 5);  // 0~1
+  if (isNaN(nextEnh)) nextEnh = 1;
+  var curEnh = nextEnh - 1; // 현재 강화 단계
+
+  // [구간별 성공 확률 (min ~ max)]
+  var min = 0.01, max = 0.01; // 기본 1%
+
+  if (curEnh < 5)        { min = 0.90; max = 1.00; } // 0~4 -> 1~5
+  else if (curEnh < 10)  { min = 0.70; max = 0.80; } // 5~9 -> 6~10
+  else if (curEnh < 15)  { min = 0.50; max = 0.60; } // 10~14
+  else if (curEnh < 20)  { min = 0.30; max = 0.40; } // 15~19
+  else if (curEnh < 30)  { min = 0.10; max = 0.20; } // 20~29 (기존 엔드구간)
+  else if (curEnh < 50)  { min = 0.03; max = 0.07; } // 30~49 (고난도)
+  else if (curEnh < 80)  { min = 0.01; max = 0.03; } // 50~79 (헬)
+  else                   { min = 0.01; max = 0.01; } // 80~99 (1% 고정)
+
+  // 구간 내에서의 미세 조정 (강화가 높을수록 min에 가까워짐)
+  // 예: 30~49 구간에서 30강은 7%, 49강은 3%
+  var rangeSize = 5; 
+  if (curEnh >= 20) rangeSize = 10;
+  if (curEnh >= 30) rangeSize = 20;
+  if (curEnh >= 50) rangeSize = 30;
+
+  var segmentPos = curEnh % rangeSize; 
+  var t = clamp01(segmentPos / rangeSize); // 0(구간초반) ~ 1(구간후반)
   var base = max - (max - min) * t;
-  // 레벨 보정(최대 +8%)
+
+  // [레벨 보정] (최대 +5%)
   var lv = trainerLv || 1;
-  var bonus = (lv - 1) * 0.001;
-  if (bonus > 0.08) 
-    bonus = 0.08;
+  var bonus = (lv - 1) * 0.0005; // 레벨당 0.05%
+  if (bonus > 0.05) bonus = 0.05;
+  
+  // 50강 이상부터는 레벨 보정도 절반으로 감소
+  if (curEnh >= 50) bonus *= 0.5;
+
   var success = base + bonus;
 
-  if (success > max) 
-    success = max;
-  if (success < min) 
-    success = min;
+  // [희귀도 보정] 전설(5성)은 고강화에서 확률 소폭 보정 (+0.5%)
+  if (rarity === 5 && curEnh >= 30) success += 0.005;
+
+  // 최종 확률 범위 제한 (최소 1%, 최대 100%)
+  success = clamp01(success);
+  if (success < 0.01) success = 0.01; 
+
+  return { success: success, keep: 1 - success, death: 0 };
+}
 
   // =========================
   // ✅ 성공 확률 "미세" 하향 (체감 약하게)
@@ -3571,7 +3575,7 @@ if (sub === "강화") {
     var parts = msg.split(" ").filter(Boolean);
     var itemCmd = parts[1]; // 두쫀쿠, 이동, 재설정
 
-    // 1. 두쫀쿠 (확정 +1강)
+   // 1. 두쫀쿠 (확정 +1강)
     if (itemCmd === "두쫀쿠" || itemCmd === "쿠키") {
       var uid = parseInt(parts[2], 10);
       if (!uid) { replier.reply("사용법: /사용 두쫀쿠 [포켓몬UID]\n예: /사용 두쫀쿠 15"); return; }
@@ -3580,10 +3584,12 @@ if (sub === "강화") {
       
       var p = findUserPokemonByUid(u, uid);
       if (!p) { replier.reply("해당 포켓몬을 찾을 수 없습니다."); return; }
-      if (p.enh >= 30) { replier.reply("이미 최대 강화(30강) 상태입니다."); return; }
+      
+      // [수정] 30 -> ENHANCE_MAX (100)
+      if (p.enh >= ENHANCE_MAX) { replier.reply("이미 최대 강화(" + ENHANCE_MAX + "강) 상태입니다."); return; }
 
       u.cookie--;
-      p.enh++; // 100% 성공
+      p.enh++; 
       
       commitSave(true);
       var db = findPokemonDB(p.pid);
