@@ -1757,16 +1757,13 @@ function addExpWithLevelUpMsg(u, expGained) {
   return line;
 }
 // -------------------- 스폰/희귀도 가중치 --------------------
+// [밸런스 수정] 희귀도별 출현 가중치 대폭 상향
 function raritySpawnWeight(r) {
-  if (r === 1) 
-    return 1.00;
-  if (r === 2) 
-    return 0.70;
-  if (r === 3) 
-    return 0.35;
-  if (r === 4) 
-    return 0.12;
-  return 0.04;
+  if (r === 1) return 1.00; // 흔함: 100% 후보 등록
+  if (r === 2) return 0.85; // (기존 0.70)
+  if (r === 3) return 0.60; // (기존 0.35) -> 대폭 상향
+  if (r === 4) return 0.30; // (기존 0.12) -> 약 2.5배 상향
+  return 0.15;              // (기존 0.04) -> 전설 약 4배 상향 (이제 뜰 겁니다!)
 }
 function enhanceCost(nextEnh) {
   nextEnh = parseInt(nextEnh, 10);
@@ -3925,35 +3922,42 @@ if (msg.indexOf("/판매") === 0) {
 
   var db = findPokemonDB(wild.pid); //
 
-  // ==================== [수정된 성공 블록] ====================
+  // ==================== [수정된 성공 블록: 15점 만점 표기] ====================
   if (t.success) {
-    clearWild(d, room); //
-    var uid = addPokemonToUser(u, wild.pid); //
-    var p = findUserPokemonByUid(u, uid); // 방금 생성된 등급/IV 확인용
-    var reward = calcCatchRewards(u, wild.pid); //
-    u.gold += reward.totalGold; //
-    var lvMsg = addExpWithLevelUpMsg(u, reward.totalExp); //
-    commitSave(true); //
+    clearWild(d, room); 
+    var uid = addPokemonToUser(u, wild.pid); 
+    var p = findUserPokemonByUid(u, uid); // 방금 잡은 포켓몬 정보 가져오기
+    var reward = calcCatchRewards(u, wild.pid); 
+    u.gold += reward.totalGold; 
+    var lvMsg = addExpWithLevelUpMsg(u, reward.totalExp); 
+    commitSave(true); 
 
-    var fx = ""; //
-    if (reward.legendary) fx = legendaryCatchFX(sender, db.name, reward); //
+    var fx = ""; 
+    if (reward.legendary) fx = legendaryCatchFX(sender, db.name, reward); 
+
+    // [UI 개선] 체력은 내부적으로 크지만(150), 보여줄 땐 15점 만점으로 환산
+    var showHp = Math.floor((p.ivHp || 0) / 10); 
+    // 0점 방지 (최소 1)
+    if (showHp < 1) showHp = 1;
 
     var catchResultMsg = 
       fx +
       blockTitle("포획 성공") +
       "🎉 " + sayDo(sender, db.name + " 포획에 성공했어요!") + "\n\n" +
       "✨ 등급: 【 " + (p.grade || "D") + " 등급 】\n" +
-      "📊 개체값: 힘(" + (p.ivStr || 0) + ") / 체력(" + (p.ivHp || 0) + ") / 공속(" + (p.ivSpd || 0) + ")\n" +
+      "📊 잠재력 (15점 만점)\n" +
+      "⚔️ 힘 : " + (p.ivStr || 0) + " / 15\n" +
+      "❤️ 체력: " + showHp + " / 15\n" +
+      "⚡ 공속: " + (p.ivSpd || 0) + " / 15\n" +
       "━━━━━━━━━━━━━━\n" +
       "🧬 내 포켓몬 ID #" + uid + "\n" +
       "💰 보상: +" + fmtNum(reward.totalGold) + "💰 / +" + reward.totalExp + "EXP\n" +
       (lvMsg ? ("\n" + lvMsg) : "") + "\n" +
-      pick(CATCH_SUCCESS_LINES); //
+      pick(CATCH_SUCCESS_LINES); 
 
-    replier.reply(catchResultMsg); //
-    return; //
+    replier.reply(catchResultMsg); 
+    return; 
   }
-
   // ==================== [기존 실패 로직 유지] ====================
   wild.attempts += 1; //
   var leftTry = Math.max(0, wild.maxAttempts - wild.attempts); //
