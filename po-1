@@ -730,7 +730,7 @@ function buildDexRankingWithMyRank(d, limit, myName) {
   };
 }
 
-// [수정됨] 신규 아이템 필드 추가 (normalizeUserData)
+// [수정됨] 통계 데이터 추가 (칭호 시스템용)
 function normalizeUserData(u) {
   if (!u) return;
   
@@ -739,17 +739,36 @@ function normalizeUserData(u) {
   if (typeof u.trainerExp !== "number") u.trainerExp = 0;
   if (typeof u.gold !== "number") u.gold = 0;
   
-  // [기존 볼]
   if (typeof u.ball !== "number") u.ball = 0;
   if (typeof u.superBall !== "number") u.superBall = 0;
   if (typeof u.ultraBall !== "number") u.ultraBall = 0;
   
-  // [특수 아이템]
   if (typeof u.dopaTicket !== "number") u.dopaTicket = 0; 
-  if (typeof u.cookie !== "number") u.cookie = 0;    // 두쫀쿠
-  if (typeof u.ticket !== "number") u.ticket = 0;    // 이동티켓
-  if (typeof u.reroll !== "number") u.reroll = 0;    // 티어리셋권
-  if (typeof u.nextFieldRegion !== "string") u.nextFieldRegion = ""; // 다음 이동 지역
+  if (typeof u.cookie !== "number") u.cookie = 0;    
+  if (typeof u.ticket !== "number") u.ticket = 0;    
+  if (typeof u.reroll !== "number") u.reroll = 0;    
+  if (typeof u.nextFieldRegion !== "string") u.nextFieldRegion = "";
+
+  // 칭호 초기화
+  if (!Array.isArray(u.titles)) u.titles = ["뉴비"];
+  if (typeof u.activeTitle !== "string") u.activeTitle = "뉴비";
+
+  // [신규] 통계 데이터 초기화 (칭호 조건용)
+  if (!u.stats) u.stats = {};
+  if (typeof u.stats.battleWin !== "number") u.stats.battleWin = 0;
+  if (typeof u.stats.battleLose !== "number") u.stats.battleLose = 0;
+  if (typeof u.stats.battleDraw !== "number") u.stats.battleDraw = 0;
+  if (typeof u.stats.battleStreak !== "number") u.stats.battleStreak = 0; // 연승
+  if (typeof u.stats.bestStreak !== "number") u.stats.bestStreak = 0;     // 최고 연승
+  
+  // ▼▼▼ 새로 추가된 통계 ▼▼▼
+  if (typeof u.stats.loseStreak !== "number") u.stats.loseStreak = 0;     // 연패 (현재)
+  if (typeof u.stats.maxLoseStreak !== "number") u.stats.maxLoseStreak = 0; // 최고 연패
+  if (typeof u.stats.totalSpentShop !== "number") u.stats.totalSpentShop = 0; // 상점 누적 사용액
+  if (typeof u.stats.totalSpentEnhance !== "number") u.stats.totalSpentEnhance = 0; // 강화 누적 사용액
+  if (typeof u.stats.totalDopaUsed !== "number") u.stats.totalDopaUsed = 0;     // 도파민 사용 횟수
+  if (typeof u.stats.totalDopaReset !== "number") u.stats.totalDopaReset = 0;   // 도파민 초기화 횟수
+  if (typeof u.stats.totalDopaDestroy !== "number") u.stats.totalDopaDestroy = 0; // 도파민 파괴 횟수
 
   if (typeof u.lastAttendanceKey !== "string") u.lastAttendanceKey = "";
   if (!Array.isArray(u.pokemons)) u.pokemons = [];
@@ -757,16 +776,13 @@ function normalizeUserData(u) {
   if (typeof u.catchFailStreak !== "number") u.catchFailStreak = 0;
   if (typeof u.lastCatchPid !== "number") u.lastCatchPid = 0;
 
-  // 2. 포켓몬 배열 정리 (데이터 보존)
   var fixed = [];
   for (var i = 0; i < u.pokemons.length; i++) {
     var p = u.pokemons[i];
     if (!p || typeof p !== "object") continue;
-    
     var pid = parseInt(p.pid, 10);
     var uid = parseInt(p.uid, 10);
     var enh = parseInt(p.enh, 10);
-    
     if (!pid || !uid) continue;
     if (!findPokemonDB(pid)) continue;
 
@@ -782,9 +798,95 @@ function normalizeUserData(u) {
     fixed.push(cleanObj);
   }
   u.pokemons = fixed;
-  
-  ensureUserStats(u);
   ensureUserDex(u);
+}
+// ==================== [칭호 시스템 유틸 함수] ====================
+
+// 1. 도감 카운트 헬퍼 (칭호 조건 체크용)
+function getDexCount(u) {
+  var cnt = 0;
+  if (u.dex) {
+    for (var k in u.dex) {
+      if (u.dex[k].caught > 0) cnt++;
+    }
+  }
+  return cnt;
+}
+
+// 2. 칭호 DB 정의 (손사장님 아이디어 반영)
+var TITLE_DB = [
+  // 🌱 성장
+  { name: "뉴비", check: function(u) { return true; } },
+  { name: "성장 중인", check: function(u) { return u.trainerLv >= 30; } },
+  { name: "고여버린", check: function(u) { return u.trainerLv >= 100; } },
+  { name: "진지충", check: function(u) { return u.trainerLv >= 150; } },
+  { name: "레벨값 못하는", check: function(u) { 
+      var total = u.stats.battleWin + u.stats.battleLose;
+      if (u.trainerLv < 50 || total < 10) return false; 
+      return (u.stats.battleWin / total) < 0.3; 
+    } 
+  },
+
+  // ⚔️ 전투
+  { name: "싸움꾼인", check: function(u) { return u.stats.bestStreak >= 10; } },
+  { name: "강력한", check: function(u) { return u.stats.bestStreak >= 20; } },
+  { name: "도라이", check: function(u) { return u.stats.bestStreak >= 50; } },
+  { name: "배틀마스터", check: function(u) { return u.stats.bestStreak >= 100; } },
+  { name: "최약체인", check: function(u) { return u.stats.maxLoseStreak >= 10; } },
+  { name: "찐따 같은", check: function(u) { return u.stats.maxLoseStreak >= 20; } },
+  { name: "다 패고 다니는", check: function(u) { 
+      return (u.stats.battleWin + u.stats.battleLose + u.stats.battleDraw) >= 1000; 
+    } 
+  },
+
+  // 📖 수집
+  { name: "수집가", check: function(u) { return getDexCount(u) >= 50; } },
+  { name: "수집에 미친", check: function(u) { return getDexCount(u) >= 130; } },
+  { name: "1세대 마스터", check: function(u) { return getDexCount(u) >= 151; } },
+  { name: "잡는 맛을 아는", check: function(u) { return u.pokemons.length >= 150; } },
+  { name: "진정한 1세대 마스터", check: function(u) { 
+      if (getDexCount(u) < 151) return false;
+      for (var k in u.dex) {
+        if (u.dex[k].caught > 0 && u.dex[k].maxGrade !== "S") return false;
+      }
+      return true;
+    } 
+  },
+
+  // 💰 경제/도박
+  { name: "백만장자", check: function(u) { return u.gold >= 1000000; } },
+  { name: "천만장자", check: function(u) { return u.gold >= 10000000; } },
+  { name: "일론머스크", check: function(u) { return u.gold >= 150000000; } },
+  { name: "플렉스", check: function(u) { return (u.stats.totalSpentShop || 0) >= 100000000; } },
+  { name: "강화 중독자", check: function(u) { return (u.stats.totalSpentEnhance || 0) >= 100000000; } },
+  { name: "도파민 중독", check: function(u) { return (u.stats.totalDopaUsed || 0) >= 1000; } },
+  { name: "태초마을 러버", check: function(u) { return (u.stats.totalDopaReset || 0) >= 10; } },
+  { name: "포켓몬 장의사", check: function(u) { return (u.stats.totalDopaDestroy || 0) >= 10; } }
+];
+
+// 3. 칭호 자동 지급 함수 (명령어 칠 때마다 실행됨)
+function updateTitles(u) {
+  if (!u.titles) u.titles = [];
+  var gained = [];
+  
+  for (var i = 0; i < TITLE_DB.length; i++) {
+    var t = TITLE_DB[i];
+    // 이미 있는 칭호인지 확인 (없으면 조건 체크)
+    if (u.titles.indexOf(t.name) === -1) {
+      if (t.check(u)) {
+        u.titles.push(t.name);
+        gained.push(t.name);
+      }
+    }
+  }
+  return gained;
+}
+
+// 4. 닉네임 꾸미기 함수
+function getDecoratedName(u, name) {
+  if (!u) return name;
+  var title = u.activeTitle || "뉴비";
+  return title + " " + name; 
 }
 
 // [강력 수정] 원본 배열을 확실하게 수정하고 저장 여부를 반환
@@ -1302,19 +1404,55 @@ function runSingleBattle(d, room, sender, u, myPickUid, opt) {
 
   var goldGain = 0; var expGain = 0; var extraLines = "";
 
+// [수정됨] 배틀 결과 처리 (연패 기록 로직 추가)
   if (result === 1) {
     if (affectRecord) {
-      u.stats.battleWin++; u.stats.battleStreak++;
+      u.stats.battleWin++;
+      u.stats.battleStreak++;
+      
+      // ★ 승리했으니 연패 끊기 (추가됨)
+      u.stats.loseStreak = 0; 
+      
       u.stats.bestStreak = Math.max(u.stats.bestStreak, u.stats.battleStreak);
-      if (u.stats.battleStreak % STREAK_GOLD_BONUS_EVERY === 0) { u.gold += STREAK_GOLD_BONUS; extraLines += "연승 보너스! +" + STREAK_GOLD_BONUS + "💰\n"; }
-      if (u.stats.battleStreak % STREAK_EXP_BONUS_EVERY === 0) { addExpWithLevelUpMsg(u, STREAK_EXP_BONUS); extraLines += "연승 보너스! +" + STREAK_EXP_BONUS + "EXP\n"; }
+
+      if (u.stats.battleStreak % STREAK_GOLD_BONUS_EVERY === 0) {
+        u.gold += STREAK_GOLD_BONUS;
+        extraLines += "연승 보너스! +" + STREAK_GOLD_BONUS + "💰\n";
+      }
+      if (u.stats.battleStreak % STREAK_EXP_BONUS_EVERY === 0) {
+        // addExpWithLevelUpMsg 함수가 메시지를 반환한다고 가정
+        var lvMsg = addExpWithLevelUpMsg(u, STREAK_EXP_BONUS);
+        if (lvMsg) extraLines += lvMsg + "\n";
+        extraLines += "연승 보너스! +" + STREAK_EXP_BONUS + "EXP\n";
+      }
     }
-    goldGain = BATTLE_GOLD_WIN; expGain = BATTLE_EXP_WIN;
+    goldGain = BATTLE_GOLD_WIN;
+    expGain = BATTLE_EXP_WIN;
+
   } else if (result === -1) {
-    if (affectRecord) { u.stats.battleLose++; u.stats.battleStreak = 0; }
-    goldGain = BATTLE_GOLD_LOSE; expGain = BATTLE_EXP_LOSE;
+    if (affectRecord) {
+      u.stats.battleLose++;
+      u.stats.battleStreak = 0;
+
+      // ★ [신규] 연패 기록 카운팅 (추가됨)
+      if (!u.stats.loseStreak) u.stats.loseStreak = 0;
+      u.stats.loseStreak++;
+      
+      if (!u.stats.maxLoseStreak) u.stats.maxLoseStreak = 0;
+      u.stats.maxLoseStreak = Math.max(u.stats.maxLoseStreak, u.stats.loseStreak);
+    }
+    goldGain = BATTLE_GOLD_LOSE;
+    expGain = BATTLE_EXP_LOSE;
+
   } else {
-    if (affectRecord) { u.stats.battleDraw++; if (u.stats.battleStreak > 0) { u.stats.battleStreak = 0; extraLines += pick(STREAK_RESET_DRAW_LINES) + "\n"; } }
+    if (affectRecord) {
+      u.stats.battleDraw++;
+      if (u.stats.battleStreak > 0) {
+        u.stats.battleStreak = 0;
+        extraLines += pick(STREAK_RESET_DRAW_LINES) + "\n";
+      }
+      // 무승부는 연패 기록을 건드리지 않음 (유지)
+    }
   }
 
   goldGain = Math.floor(goldGain * mult); expGain = Math.floor(expGain * mult);
@@ -2191,7 +2329,7 @@ function shopText(d, u, sender) {
     "/구매 티어리셋 1"
   );
 }
-// [수정됨] 구매 처리 로직 업데이트
+// [수정됨] 아이템 구매 함수 (신규 아이템 + 통계 기록 포함)
 function buyItem(d, u, sender, itemName, qty) {
   qty = parseInt(qty, 10);
   if (isNaN(qty)) qty = 1;
@@ -2208,11 +2346,7 @@ function buyItem(d, u, sender, itemName, qty) {
   else if (itemName === "도파민" || itemName === "도파민강화권") { cost = getShopPrice(d, "DOPA"); field = "dopaTicket"; label = "도파민강화권"; }
   else if (itemName === "두쫀쿠" || itemName === "쿠키") { cost = getShopPrice(d, "COOKIE") || SHOP_PRICE_COOKIE; field = "cookie"; label = "두쫀쿠"; }
   else if (itemName === "이동티켓" || itemName === "티켓") { cost = getShopPrice(d, "TICKET") || SHOP_PRICE_TICKET; field = "ticket"; label = "이동티켓"; }
-  else if (itemName === "티어리셋" || itemName === "티어" || itemName === "리셋") { 
-    cost = getShopPrice(d, "REROLL") || SHOP_PRICE_REROLL; 
-    field = "reroll"; 
-    label = "티어리셋권"; 
-  }
+  else if (itemName === "티어리셋" || itemName === "티어" || itemName === "리셋") { cost = getShopPrice(d, "REROLL") || SHOP_PRICE_REROLL; field = "reroll"; label = "티어리셋권"; }
   else {
     return { ok: false, reason: "🚫 존재하지 않는 아이템입니다.\n(몬스터볼, 슈퍼볼, 하이퍼볼, 도파민, 두쫀쿠, 이동티켓, 티어리셋)" };
   }
@@ -2221,7 +2355,14 @@ function buyItem(d, u, sender, itemName, qty) {
     return { ok: false, reason: sender + "님, 골드가 부족합니다.\n필요: " + fmtNum(cost * qty) + "💰\n보유: " + fmtNum(u.gold) + "💰" };
   }
 
+  // 1. 골드 차감
   u.gold -= cost * qty;
+
+  // 2. [통계] 상점 누적 사용액 기록 (칭호용)
+  if (!u.stats.totalSpentShop) u.stats.totalSpentShop = 0;
+  u.stats.totalSpentShop += (cost * qty);
+
+  // 3. 아이템 지급
   if (!u[field]) u[field] = 0;
   u[field] += qty;
   
@@ -4258,6 +4399,7 @@ if (Math.random() < 0.10) {
     replier.reply(sender + "님의 배틀 전적\n\n" + formatRecord(u));
     return;
   }
+// -------------------- [수정됨] 강화 시스템 (통계 포함) --------------------
   if (msg.indexOf("/강화") === 0) {
     var nowE = nowMs();
     if (nowE - u.lastEnhanceAt < ENHANCE_COOLDOWN_MS) {
@@ -4267,160 +4409,163 @@ if (Math.random() < 0.10) {
       return;
     }
     u.lastEnhanceAt = nowE;
+
     var spE = msg.split(" ");
     if (spE.length < 2) {
-      replier.reply("사용법: /강화 포켓몬ID\n예: /강화 12");
+      replier.reply("사용법: /강화 [포켓몬UID]\n예: /강화 12");
       return;
     }
     var uidEnh = parseInt(spE[1], 10);
-    if (!uidEnh) {
-      replier.reply("포켓몬ID가 올바르지 않습니다.");
+    if (!uidEnh) { replier.reply("포켓몬UID가 올바르지 않습니다."); return; }
+
+    var p = findUserPokemonByUid(u, uidEnh);
+    if (!p) { replier.reply("해당 포켓몬을 찾을 수 없습니다."); return; }
+
+    if (p.enh >= ENHANCE_MAX) {
+      replier.reply("이미 최대 강화 단계(" + ENHANCE_MAX + "강)입니다.");
       return;
     }
-    if (!u.pokemons || u.pokemons.length === 0) {
-      replier.reply("강화할 포켓몬이 없습니다.\n/필드 또는 /탐험 으로 포켓몬을 얻어보세요.");
-      return;
-    }
-    var idxE = -1;
-    for (var ei = 0; ei < u.pokemons.length; ei++) {
-      if (u.pokemons[ei].uid === uidEnh) {
-        idxE = ei;
-        break;
-      }
-    }
-    if (idxE < 0) {
-      replier.reply("해당 포켓몬을 찾을 수 없습니다.\n/내포켓몬 으로 ID를 확인해 주세요.");
-      return;
-    }
-    var p = u.pokemons[idxE];
+
     var dbp = findPokemonDB(p.pid);
     var pName = dbp ? dbp.name : "포켓몬";
-    // 강화 상한
-    if (p.enh >= ENHANCE_MAX) {
-      replier.reply("이미 최대 강화 단계입니다. (" + ENHANCE_MAX + "강)");
-      return;
-    }
-    var before = p.enh;
-    var nextEnh = before + 1;
-    // 비용
+    var nextEnh = (p.enh || 0) + 1;
     var rarity = dbp ? dbp.rarity : 2;
     var cost = enhanceCostByRarity(nextEnh, rarity);
+
     if (u.gold < cost) {
-      replier.reply(
-  sender + "님, 강화 비용이 부족합니다.\n" +
-  "필요 골드: " + fmtNum(cost) + "💰\n" +
-  "보유 골드: " + fmtNum(u.gold) + "💰"
-); return;
+      replier.reply(sender + "님, 강화 비용이 부족합니다.\n필요: " + fmtNum(cost) + "💰\n보유: " + fmtNum(u.gold) + "💰");
+      return;
     }
+
+    // 1. 골드 차감
     u.gold -= cost;
-    // 확률표 + 판정 (일반강화: 성공/유지만)
+
+    // 2. [통계] 강화비 누적 사용액 기록 (칭호용)
+    if (!u.stats.totalSpentEnhance) u.stats.totalSpentEnhance = 0;
+    u.stats.totalSpentEnhance += cost;
+
+    // 3. 강화 시도
     var rates = enhanceRatesByRarity(nextEnh, u.trainerLv, rarity);
-    var roll = Math.random();
-    if (roll < rates.success) {
-      var after = before + 1;
-      p.enh = after;
-      var evoLine = tryAutoEvolveByEnh(p);
-      var outMsg = buildEnhResultMsg(sender, pName, before, after, ENH_RESULT_UP);
-      if (evoLine) 
-        outMsg += "\n\n🌟 진화! " + evoLine;
-      outMsg += buildNextEnhInfoLine(p, ENH_RESULT_UP, u);
-      commitSave(true);
-      replier.reply(outMsg);
-      return;
-    } else {
-      var outMsg2 = buildEnhResultMsg(sender, pName, before, before, ENH_RESULT_KEEP);
-      outMsg2 += buildNextEnhInfoLine(p, ENH_RESULT_KEEP, u);
-      commitSave(true);
-      replier.reply(outMsg2);
-      return;
+    var rVal = Math.random();
+    var resultType = ENH_RESULT_KEEP; 
+
+    if (rVal < rates.success) resultType = ENH_RESULT_UP;
+    else if (rVal < rates.success + rates.keep) resultType = ENH_RESULT_KEEP;
+    else resultType = ENH_RESULT_DOWN;
+
+    var before = p.enh;
+    var after = before;
+    
+    if (resultType === ENH_RESULT_UP) {
+      p.enh = nextEnh;
+      after = nextEnh;
+      tryAutoEvolveByEnh(p); 
+    } else if (resultType === ENH_RESULT_DOWN) {
+      p.enh = Math.max(0, before - 1);
+      after = p.enh;
     }
+
+    commitSave(true);
+    var resultMsg = buildEnhResultMsg(sender, pName, before, after, resultType);
+    var nextInfo = buildNextEnhInfoLine(p, resultType, u);
+    replier.reply(resultMsg + nextInfo);
+    return;
   }
+
+
+
   if (msg === "/출석" || msg === "/출석체크") {
     var r = doAttendanceCheck(u, sender);
     commitSave(true);
     replier.reply(r.msg);
     return;
   }
+  // -------------------- [수정됨] 도파민 시스템 (통계 포함) --------------------
   if (msg.indexOf("/도파민") === 0) {
     var spD = msg.split(" ");
-    if (spD.length < 2) {
-      replier.reply("사용법: /도파민 포켓몬ID\n예: /도파민 12");
-      return;
-    }
+    if (spD.length < 2) { replier.reply("사용법: /도파민 [포켓몬UID]\n예: /도파민 12"); return; }
+    
     var uidD = parseInt(spD[1], 10);
-    if (!uidD) {
-      replier.reply("포켓몬ID가 올바르지 않습니다.");
-      return;
-    }
-    if (!u.pokemons || u.pokemons.length === 0) {
-      replier.reply("강화할 포켓몬이 없습니다.\n/필드 또는 /탐험 으로 포켓몬을 얻어보세요.");
-      return;
-    }
-    if (typeof u.dopaTicket !== "number") 
-      u.dopaTicket = 0;
-    if (u.dopaTicket <= 0) {
-      replier.reply("도파민강화권이 없습니다.\n/상점 에서 도파민강화권을 구매할 수 있어요.");
-      return;
-    }
-    var idxD = -1;
-    for (var di = 0; di < u.pokemons.length; di++) {
-      if (u.pokemons[di].uid === uidD) {
-        idxD = di;
-        break;
-      }
-    }
-    if (idxD < 0) {
-      replier.reply("해당 포켓몬을 찾을 수 없습니다.\n/내포켓몬 으로 ID를 확인해 주세요.");
-      return;
-    }
-    var pD = u.pokemons[idxD];
-    var dbD = findPokemonDB(pD.pid);
-    var pNameD = dbD ? dbD.name : "포켓몬";
+    if (!uidD) { replier.reply("포켓몬UID가 올바르지 않습니다."); return; }
+
+    var pD = findUserPokemonByUid(u, uidD);
+    if (!pD) { replier.reply("해당 포켓몬을 찾을 수 없습니다."); return; }
+
     if (pD.enh >= ENHANCE_MAX) {
-      replier.reply("이미 최대 강화 단계입니다. (" + ENHANCE_MAX + "강)");
+      replier.reply("이미 최대 강화 단계(" + ENHANCE_MAX + "강)입니다.");
       return;
     }
-    u.dopaTicket -= 1;
+
+    if (!u.dopaTicket || u.dopaTicket <= 0) {
+      replier.reply("도파민강화권이 없습니다.\n/상점 에서 구매해주세요.");
+      return;
+    }
+
+    // 1. 티켓 소모
+    u.dopaTicket--;
+
+    // 2. [통계] 도파민 사용 횟수 기록
+    if (!u.stats.totalDopaUsed) u.stats.totalDopaUsed = 0;
+    u.stats.totalDopaUsed++;
+
     var before = (typeof pD.enh === "number") ? pD.enh : 0;
     var res = rollDopaEnhance();
-    var header = "💥 도파민 강화 시도!\n" + sender + "님이 숨을 고릅니다...\n" + "━━━━━━━━━━━━━━\n";
-    // -------------------- UP --------------------
+    var dbD = findPokemonDB(pD.pid);
+    var pNameD = dbD ? dbD.name : "포켓몬";
+
+    var header = "💥 도파민 강화 시도!\n" + sender + "님이 숨을 고릅니다...\n━━━━━━━━━━━━━━\n";
+    var out = "";
+
     if (res.kind === "UP") {
       var after = Math.min(ENHANCE_MAX, before + (res.up || 0));
-      var realUp = after - before;      // 캡 반영한 실제 상승량
+      var realUp = after - before;
       pD.enh = after;
-      var evoLine = tryAutoEvolveByEnh(pD);
-      var out = header;
-      // 🌌 초대성공(8강 이상)
+      tryAutoEvolveByEnh(pD);
+      
+      out = header;
       if (realUp >= 8) {
-        out += "🌌🌌🌌 초 대 성 공 🌌🌌🌌\n\n" + "⚠️ 전설급 폭주가 발생했습니다!\n" + "한 번에 +" + realUp + "강 상승!\n\n" + "🔥 " + before + "강 → " + after + "강 🔥\n" + "━━━━━━━━━━━━━━\n" + "🏆 " + sender + "님이 " + pNameD + "을(를) +" + after + "강까지 올렸습니다!\n";
+        out += "🌌🌌🌌 초 대 성 공 🌌🌌🌌\n⚠️ 전설급 폭주! (+" + realUp + "강)\n🔥 " + before + "강 → " + after + "강 🔥\n";
       } else if (realUp >= 5) {
-        out += "⚡⚡⚡ 대 성 공 ⚡⚡⚡\n\n" + "💥 도파민 한계 돌파!\n" + "+" + realUp + "강 폭주 상승!\n\n" + "🔥 " + before + "강 → " + after + "강 🔥\n";
+        out += "⚡⚡⚡ 대 성 공 ⚡⚡⚡\n💥 도파민 한계 돌파! (+" + realUp + "강)\n🔥 " + before + "강 → " + after + "강 🔥\n";
       } else {
-        out += "✨✨ 성공! ✨✨\n\n" + "📈 강화 폭주 발생!\n" + "+" + realUp + "강 상승!\n\n" + before + "강 → " + after + "강\n";
+        out += "✨ 성 공 ✨\n깔끔하게 올랐습니다. (+" + realUp + "강)\n🔥 " + before + "강 → " + after + "강 🔥\n";
       }
-      if (evoLine) {
-        out += "\n\n🌟 진화 발생!\n" + evoLine;
-      }
-      out += "\n━━━━━━━━━━━━━━\n" + "🎫 잔여 도파민강화권: " + u.dopaTicket + "개";
       commitSave(true);
       replier.reply(out);
-      return;
-    }
-    if (res.kind === "KEEP") {
+      
+    } else if (res.kind === "KEEP") {
+      out = header + "💨 유 지 💨\n아무 일도 일어나지 않았습니다.\n(다행인가요?)";
       commitSave(true);
-      replier.reply(header + "💨 아슬아슬...\n\n" + "강화는 실패했지만,\n" + "포켓몬이 버텨냈습니다.\n\n" + before + "강 → " + before + "강 (유지)\n" + "━━━━━━━━━━━━━━\n" + "🎫 잔여 도파민강화권: " + u.dopaTicket + "개");
-      return;
-    }
-    if (res.kind === "RESET0") {
+      replier.reply(out);
+      
+    } else if (res.kind === "RESET0") {
       pD.enh = 0;
+      
+      // 3. [통계] 초기화 횟수 기록
+      if (!u.stats.totalDopaReset) u.stats.totalDopaReset = 0;
+      u.stats.totalDopaReset++;
+
+      out = header + "📉 초 기 화 📉\n모든 강화 수치가 증발했습니다...\n🔥 " + before + "강 → 0강";
       commitSave(true);
-      replier.reply(header + "💥 강화 폭주 실패!\n\n" + "강화 에너지가 역류했습니다...\n\n" + before + "강 → 💀 0강 초기화\n" + "📉 손실: -" + before + "강\n" + "━━━━━━━━━━━━━━\n" + "🎫 잔여 도파민강화권: " + u.dopaTicket + "개");
-      return;
+      replier.reply(out);
+      
+    } else if (res.kind === "EXIT") {
+      // 포켓몬 삭제
+      var idxD = -1;
+      for (var k=0; k<u.pokemons.length; k++) {
+        if (u.pokemons[k].uid === uidD) { idxD = k; break; }
+      }
+      if (idxD >= 0) {
+        u.pokemons.splice(idxD, 1);
+        
+        // 4. [통계] 파괴 횟수 기록
+        if (!u.stats.totalDopaDestroy) u.stats.totalDopaDestroy = 0;
+        u.stats.totalDopaDestroy++;
+      }
+      out = header + "💀 파 괴 💀\n" + pNameD + "(이)가 도파민을 견디지 못하고 도망쳤습니다...\n(포켓몬 소멸)";
+      commitSave(true);
+      replier.reply(out);
     }
-    u.pokemons.splice(idxD, 1);
-    commitSave(true);
-    replier.reply(header + "☠️ 치명적 실패 ☠️\n\n" + pNameD + "의 힘이 감당 한계를 넘었습니다.\n\n" + "포켓몬이 사라졌습니다...\n" + "🧾 현재 보유 포켓몬 수: " + u.pokemons.length + "마리\n" + "━━━━━━━━━━━━━━\n" + "🎫 잔여 도파민강화권: " + u.dopaTicket + "개");
     return;
   }
   // -------------------- /배틀 --------------------
