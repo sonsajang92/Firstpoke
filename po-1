@@ -77,10 +77,11 @@ var BATTLE_BONUS_ENH_CHANCE = 0.07;
 var SHOP_PRICE_BALL = 100;
 var SHOP_PRICE_SUPER = 500;
 var SHOP_PRICE_ULTRA = 1000;
-var SHOP_PRICE_DOPA = 20000;// 도파민강화권
-var SHOP_PRICE_COOKIE = 300000; // 두쫀쿠 (100% +1강)
+var SHOP_PRICE_GOD = 100000000;  // 슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커평범한용태는미친사람갓민수랄부볼 (1억 💰)
+var SHOP_PRICE_DOPA = 50000;// 도파민강화권
+var SHOP_PRICE_COOKIE = 800000; // 두쫀쿠 (100% +1강)
 var SHOP_PRICE_TICKET = 5000;  // 이동 티켓 (원하는 지역 이동)
-var SHOP_PRICE_REROLL = 30000; // 등급 재설정권 (S~D 랜덤)
+var SHOP_PRICE_REROLL = 50000; // 등급 재설정권 (S~D 랜덤)
 
 // 타입 상성 재매핑 값(0->1, 0.5->1.5, 1->2, 2->3.5)
 var TYPE_STRONG = 4.4;
@@ -96,7 +97,7 @@ var STREAK_EXP_BONUS = 25;
 var STREAK_ENH_BONUS_EVERY = 10;
 var STREAK_ENH_BONUS_CHANCE = 0.12;// 10연승 도달 시 추가 확률
 var MIN_BATTLE_ENH = 5;
-var BALL_CATCH_MULT = [1.00, 1.70, 2.40];
+var BALL_CATCH_MULT = [1.00, 3.00, 5.00, 100.00];
 var ACTIVE_SAVE_INTERVAL_MS = 20 * 1000;// 20초에 1번만 저장
 var MATCH_POOL_KEY = "__GLOBAL_MATCH__";
 // ==================== 배틀 참가 최소 강화 ====================
@@ -761,6 +762,7 @@ function normalizeUserData(u) {
   if (typeof u.ball !== "number") u.ball = 0;
   if (typeof u.superBall !== "number") u.superBall = 0;
   if (typeof u.ultraBall !== "number") u.ultraBall = 0;
+  if (typeof u.godBall !== "number") u.godBall = 0; // ★ 전설의 랄부볼 필드 추가
   
   if (typeof u.dopaTicket !== "number") u.dopaTicket = 0; 
   if (typeof u.cookie !== "number") u.cookie = 0;    
@@ -790,6 +792,8 @@ function normalizeUserData(u) {
   if (typeof u.stats.totalDopaDestroy !== "number") u.stats.totalDopaDestroy = 0; // 도파민 파괴 횟수
   if (typeof u.stats.totalEscapes !== "number") u.stats.totalEscapes = 0; // 도망 횟수
   if (typeof u.stats.totalCookieUsed !== "number") u.stats.totalCookieUsed = 0;   // 두쫀쿠 사용량 (추가)
+  if (typeof u.stats.totalGodBallBought !== "number") u.stats.totalGodBallBought = 0;
+  
   if (typeof u.nextSpawnPid !== "number") u.nextSpawnPid = 0; // 0이면 예약 없음
   if (typeof u.nextSpawnPid !== "number") u.nextSpawnPid = 0;
   if (typeof u.nextSpawnShiny !== "boolean") u.nextSpawnShiny = false; // 이로치 예약용
@@ -838,12 +842,10 @@ function getDexCount(u) {
   return cnt;
 }
 
-// 2. [최종 통합] 칭호 자동 지급 로직
 function updateTitles(u) {
   if (!u.titles) u.titles = ["뉴비"];
   var gained = [];
 
-  // 칭호 추가 보조 함수
   function check(titleName, condition) {
     if (u.titles.indexOf(titleName) === -1 && condition) {
       u.titles.push(titleName);
@@ -851,7 +853,7 @@ function updateTitles(u) {
     }
   }
 
-  // 🌱 성장 관련
+  // 🌱 성장 관련 (Lv 30, 100, 150...)
   check("뉴비", true);
   check("성장 중인", u.trainerLv >= 30);
   check("고여버린", u.trainerLv >= 100);
@@ -860,7 +862,7 @@ function updateTitles(u) {
   var winR = totalB > 0 ? (u.stats.battleWin / totalB) : 1;
   check("레벨값 못하는", u.trainerLv >= 50 && winR <= 0.3);
 
-  // ⚔️ 전투 관련
+  // ⚔️ 전투 관련 (연승, 연패, 누적 판수...)
   check("싸움꾼인", u.stats.bestStreak >= 10);
   check("강력한", u.stats.bestStreak >= 20);
   check("도라이", u.stats.bestStreak >= 50);
@@ -869,8 +871,8 @@ function updateTitles(u) {
   check("찐따 같은", u.stats.loseStreak >= 20);
   check("다 패고 다니는", (u.stats.battleWin + u.stats.battleLose + u.stats.battleDraw) >= 1000);
 
-  // 📖 수집 관련
-  var caughtCount = getDexCount(u); // 위 1번 함수 사용
+  // 📖 수집 관련 (도감 개수, 보유 개수...)
+  var caughtCount = getDexCount(u);
   check("수집가", caughtCount >= 50);
   check("수집에 미친", caughtCount >= 130);
   check("1세대 마스터", caughtCount >= 151);
@@ -894,6 +896,9 @@ function updateTitles(u) {
   check("도파민 중독", (u.stats.totalDopaUsed || 0) >= 1000);
   check("태초마을 러버", (u.stats.totalDopaReset || 0) >= 10);
   check("포켓몬 장의사", (u.stats.totalDopaDestroy || 0) >= 10);
+  
+  // ★ [신규 추가] 랄부볼 3개 이상 누적 구매 시 지급
+  check("평범하게 미친", (u.stats.totalGodBallBought || 0) >= 3);
 
   // 🔥 기타 특수 조건
   check("구슬동자 같은", u.ball >= 100 && u.superBall >= 100 && u.ultraBall >= 100);
@@ -904,18 +909,18 @@ function updateTitles(u) {
   for(var i=0; i<u.pokemons.length; i++) { if(u.pokemons[i].shiny) sCount++; }
   check("빛나는 대머리", sCount >= 5);
 
-  // 특정 60강 체크
   for(var j=0; j<u.pokemons.length; j++) {
     var p = u.pokemons[j];
     if (p.enh >= 60) {
-      if (p.pid === 95) check("딴딴한꽂츄", true);   // 롱스톤
-      if (p.pid === 145) check("테슬라 대주주", true); // 썬더
-      if (p.pid === 149) check("개망나니", true);     // 망나뇽
+      if (p.pid === 95) check("딴딴한꽂츄", true);
+      if (p.pid === 145) check("테슬라 대주주", true);
+      if (p.pid === 149) check("개망나니", true);
     }
   }
 
   return gained;
 }
+
 
 // 3. 닉네임 꾸미기
 function getDecoratedName(u, name) {
@@ -2277,23 +2282,19 @@ function rarityCatchPenalty(r) {
   return 0.45;
 }
 function consumeBall(u, ballType) {
-  if (ballType === 0) {
-    if (u.ball <= 0) 
-      return false;
-    u.ball -= 1;
-    return true;
+  if (ballType === 0) { if (u.ball <= 0) return false; u.ball--; return true; }
+  if (ballType === 1) { if (u.superBall <= 0) return false; u.superBall--; return true; }
+  if (ballType === 2) { if (u.ultraBall <= 0) return false; u.ultraBall--; return true; }
+  
+  // ★ 킹갓랄부볼 소모 로직 (godBall 필드)
+  if (ballType === 3) { 
+    if (!u.godBall || u.godBall <= 0) return false; 
+    u.godBall--; 
+    return true; 
   }
-  if (ballType === 1) {
-    if (u.superBall <= 0) 
-      return false;
-    u.superBall -= 1;
-    return true;
-  }
-  if (u.ultraBall <= 0) 
-    return false;
-  u.ultraBall -= 1;
-  return true;
+  return false;
 }
+
 function getMaxCatchAttempts(pid) {
   var db = findPokemonDB(pid);
   var r = db ? (db.rarity || 2) : 2;
@@ -2362,26 +2363,26 @@ function rollDopaEnhance() {
   return {
   kind: "EXIT"};
 }
-// -------------------- 상점 --------------------
+// -------------------- 상점 목록 출력 --------------------
 function shopText(d, u, sender) {
   return (
-    sender + "님 현재 잔여 골드는 " + fmtNum(u.gold) + "💰 입니다\n\n" +
+    "👤 " + sender + "님 현재 잔여 골드는 " + fmtNum(u.gold) + "💰 입니다\n\n" +
     "🏪 [상점 물품 목록]\n" +
-    "1. 몬스터볼 " + fmtNum(getShopPrice(d, "BALL")) + "💰\n" +
-    "2. 슈퍼볼 " + fmtNum(getShopPrice(d, "SUPER")) + "💰\n" +
-    "3. 하이퍼볼 " + fmtNum(getShopPrice(d, "ULTRA")) + "💰\n" +
-    "4. 도파민강화권 " + fmtNum(getShopPrice(d, "DOPA")) + "💰\n" +
-    "5. 두쫀쿠(확정강화) " + fmtNum(getShopPrice(d, "COOKIE") || SHOP_PRICE_COOKIE) + "💰\n" +
-    "6. 이동티켓 " + fmtNum(getShopPrice(d, "TICKET") || SHOP_PRICE_TICKET) + "💰\n" +
-    "7. 티어리셋권 " + fmtNum(getShopPrice(d, "REROLL") || SHOP_PRICE_REROLL) + "💰\n\n" +
+    "1. 몬스터볼 : " + fmtNum(getShopPrice(d, "BALL")) + "💰\n" +
+    "2. 슈퍼볼 : " + fmtNum(getShopPrice(d, "SUPER")) + "💰 (3배↑)\n" +
+    "3. 하이퍼볼 : " + fmtNum(getShopPrice(d, "ULTRA")) + "💰 (5배↑)\n" +
+    "4. 도파민강화권 : " + fmtNum(getShopPrice(d, "DOPA")) + "💰\n" +
+    "5. 두쫀쿠(확정강화) : " + fmtNum(SHOP_PRICE_COOKIE) + "💰\n" +
+    "6. 이동티켓 : " + fmtNum(SHOP_PRICE_TICKET) + "💰\n" +
+    "7. 티어리셋권 : " + fmtNum(SHOP_PRICE_REROLL) + "💰\n" +
+    "8. 슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커평범한용태는미친사람갓민수랄부볼 : " + fmtNum(SHOP_PRICE_GOD) + "💰\n\n" +
     "🛒 [구매 방법]\n" +
     "/구매 몬스터볼 10\n" +
-    "/구매 두쫀쿠 1\n" +
-    "/구매 이동티켓 1\n" +
-    "/구매 티어리셋 1"
+    "/구매 슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커평범한용태는미친사람갓민수랄부볼 1"
   );
 }
-// [수정됨] 아이템 구매 함수 (신규 아이템 + 통계 기록 포함)
+
+
 function buyItem(d, u, sender, itemName, qty, replier) {
   qty = parseInt(qty, 10);
   if (isNaN(qty)) qty = 1;
@@ -2391,37 +2392,52 @@ function buyItem(d, u, sender, itemName, qty, replier) {
   var field = "";
   var label = "";
   
-  // 아이템 매핑
+  // 1. 아이템 이름 판정 (랄부볼은 풀네임만 허용)
   if (itemName === "몬스터볼") { cost = getShopPrice(d, "BALL"); field = "ball"; label = "몬스터볼"; }
   else if (itemName === "슈퍼볼") { cost = getShopPrice(d, "SUPER"); field = "superBall"; label = "슈퍼볼"; }
   else if (itemName === "하이퍼볼") { cost = getShopPrice(d, "ULTRA"); field = "ultraBall"; label = "하이퍼볼"; }
   else if (itemName === "도파민" || itemName === "도파민강화권") { cost = getShopPrice(d, "DOPA"); field = "dopaTicket"; label = "도파민강화권"; }
-  else if (itemName === "두쫀쿠" || itemName === "쿠키") { cost = getShopPrice(d, "COOKIE") || SHOP_PRICE_COOKIE; field = "cookie"; label = "두쫀쿠"; }
-  else if (itemName === "이동티켓" || itemName === "티켓") { cost = getShopPrice(d, "TICKET") || SHOP_PRICE_TICKET; field = "ticket"; label = "이동티켓"; }
-  else if (itemName === "티어리셋" || itemName === "티어" || itemName === "리셋") { cost = getShopPrice(d, "REROLL") || SHOP_PRICE_REROLL; field = "reroll"; label = "티어리셋권"; }
+  else if (itemName === "두쫀쿠" || itemName === "쿠키") { cost = SHOP_PRICE_COOKIE; field = "cookie"; label = "두쫀쿠"; }
+  else if (itemName === "이동티켓" || itemName === "티켓") { cost = SHOP_PRICE_TICKET; field = "ticket"; label = "이동티켓"; }
+  else if (itemName === "티어리셋" || itemName === "티어" || itemName === "리셋") { cost = SHOP_PRICE_REROLL; field = "reroll"; label = "티어리셋권"; }
+  
+  // ★ [핵심] 풀네임 아니면 절대 못 삼
+  else if (itemName === "슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커평범한용태는미친사람갓민수랄부볼") { 
+    cost = SHOP_PRICE_GOD; // 상단에 선언한 1억 골드
+    field = "godBall"; 
+    label = "슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커평범한용태는미친사람갓민수랄부볼"; 
+  }
   else {
-    return { ok: false, reason: "🚫 존재하지 않는 아이템입니다.\n(몬스터볼, 슈퍼볼, 하이퍼볼, 도파민, 두쫀쿠, 이동티켓, 티어리셋)" };
+    return { ok: false, reason: "🚫 존재하지 않는 아이템입니다.\n(전설의 볼은 이름을 정확히 입력해야 합니다.)" };
   }
 
+  // 2. 골드 부족 체크
   if (u.gold < cost * qty) {
     return { ok: false, reason: sender + "님, 골드가 부족합니다.\n필요: " + fmtNum(cost * qty) + "💰\n보유: " + fmtNum(u.gold) + "💰" };
   }
 
-  // 1. 골드 차감
+  // 3. 재화 차감 및 통계 기록
   u.gold -= cost * qty;
-
-  // 2. [통계] 상점 누적 사용액 기록 (칭호용)
   if (!u.stats.totalSpentShop) u.stats.totalSpentShop = 0;
   u.stats.totalSpentShop += (cost * qty);
 
-  // 3. 아이템 지급
-  if (!u[field]) u[field] = 0;
+  // ★ 랄부볼 누적 구매 횟수 기록
+  if (field === "godBall") {
+    u.stats.totalGodBallBought = (u.stats.totalGodBallBought || 0) + qty;
+  }
+
+  // 4. 아이템 가방 지급
+  if (typeof u[field] !== "number") u[field] = 0; 
   u[field] += qty;
   
   commitSave(true);
+  
+  // 5. 칭호 획득 여부 체크 (checkAndNotifyTitles가 내부의 updateTitles를 호출함)
   checkAndNotifyTitles(u, replier);
+  
   return { ok: true, msg: "🛒 " + label + " " + qty + "개 구매 완료!\n💰 잔여 골드: " + fmtNum(u.gold) + "💰" };
 }
+
 // -------------------- 전적/랭크 --------------------
 function battleScoreRank(u) {
   ensureUserStats(u);
@@ -3767,11 +3783,12 @@ var decoName = getDecoratedName(u, sender);
   }
 // -------------------- [신규] 내가방 (인벤토리) --------------------
 // -------------------- [수정됨] 내가방 (티어리셋 적용) --------------------
-  if (msg === "/내가방") {
+    if (msg === "/내가방") {
     var list = "";
     list += "🔴 몬스터볼: " + fmtNum(u.ball) + "개\n";
     list += "🔵 슈퍼볼: " + fmtNum(u.superBall) + "개\n";
     list += "⚫ 하이퍼볼: " + fmtNum(u.ultraBall) + "개\n";
+    list += "👑 킹갓볼: " + fmtNum(u.godBall || 0) + "개\n"; // ★ 킹갓볼 추가
     list += "💳 도파민강화권: " + fmtNum(u.dopaTicket) + "장\n";
     list += "🍪 두쫀쿠(확정강화): " + fmtNum(u.cookie) + "개\n";
     list += "🎫 이동티켓: " + fmtNum(u.ticket) + "장\n";
@@ -3780,6 +3797,7 @@ var decoName = getDecoratedName(u, sender);
     replier.reply("🎒 " + sender + "님의 가방\n━━━━━━━━━━━━━━\n" + list);
     return;
   }
+  
 // -------------------- [신규] 아이템 사용 시스템 --------------------
   if (msg.indexOf("/사용") === 0) {
     var parts = msg.split(" ").filter(Boolean);
@@ -4402,10 +4420,17 @@ function handleCatch(ballType, ballName, decoName, replier) {
   return; 
 }
 
+    // 🎯 포획 명령어 구역
   if (msg === "/몬스터볼" || msg === "/몬" || msg === "/ㅁ") { handleCatch(0, "몬스터볼", decoName, replier); return; }
   if (msg === "/슈퍼볼" || msg === "/슈" || msg === "/ㅅ") { handleCatch(1, "슈퍼볼", decoName, replier); return; }
   if (msg === "/하이퍼볼" || msg === "/하" || msg === "/ㅎ") { handleCatch(2, "하이퍼볼", decoName, replier); return; }
 
+  // ★ 전설의 랄부볼 명령어 (풀네임 아니면 발동 안함)
+  if (msg === "/슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커평범한용태는미친사람갓민수랄부볼") { 
+    handleCatch(3, "슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커평범한용태는미친사람갓민수랄부볼", decoName, replier); 
+    return; 
+  }
+  
 // -------------------- [수정됨] 칭호 시스템 (도감 조건 표기 및 번호 선택) --------------------
   if (msg.indexOf("/칭호") === 0) {
     // 1. 행동 후 즉시 칭호 체크 (명령어 입력 시점에도 갱신)
@@ -4770,7 +4795,7 @@ if (Math.random() < 0.10) {
     replier.reply(r.msg);
     return;
   }
-  // -------------------- [수정됨] 도파민 시스템 (통계 포함) --------------------
+  // -------------------- [수정됨] 도파민 시스템 (통계 포함 + UID 출력 개선) --------------------
   if (msg.indexOf("/도파민") === 0) {
     var spD = msg.split(" ");
     if (spD.length < 2) { replier.reply("사용법: /도파민 [포켓몬UID]\n예: /도파민 12"); return; }
@@ -4791,19 +4816,17 @@ if (Math.random() < 0.10) {
       return;
     }
 
-    // 1. 티켓 소모
+    // 1. 티켓 소모 및 통계 기록
     u.dopaTicket--;
-
-    // 2. [통계] 도파민 사용 횟수 기록
-    if (!u.stats.totalDopaUsed) u.stats.totalDopaUsed = 0;
-    u.stats.totalDopaUsed++;
+    u.stats.totalDopaUsed = (u.stats.totalDopaUsed || 0) + 1;
 
     var before = (typeof pD.enh === "number") ? pD.enh : 0;
     var res = rollDopaEnhance();
     var dbD = findPokemonDB(pD.pid);
     var pNameD = dbD ? dbD.name : "포켓몬";
 
-    var header = "💥 도파민 강화 시도!\n" + sender + "님이 숨을 고릅니다...\n━━━━━━━━━━━━━━\n";
+    var header = "💥 도파민 강화 시도!\n" + decoName + "님이 숨을 고릅니다...\n━━━━━━━━━━━━━━\n";
+    var targetLine = "👾 대상: #" + uidD + " " + pNameD + "\n";
     var out = "";
 
     if (res.kind === "UP") {
@@ -4812,56 +4835,40 @@ if (Math.random() < 0.10) {
       pD.enh = after;
       tryAutoEvolveByEnh(pD);
       
-      out = header;
       if (realUp >= 8) {
-        out += "🌌🌌🌌 초 대 성 공 🌌🌌🌌\n⚠️ 전설급 폭주! (+" + realUp + "강)\n🔥 " + before + "강 → " + after + "강 🔥\n";
+        out = header + "🌌🌌🌌 초 대 성 공 🌌🌌🌌\n\n⚠️ 전설급 폭주! (+" + realUp + "강)\n\n" + targetLine + "🔥 " + before + "강 → " + after + "강 🔥";
       } else if (realUp >= 5) {
-        out += "⚡⚡⚡ 대 성 공 ⚡⚡⚡\n💥 도파민 한계 돌파! (+" + realUp + "강)\n🔥 " + before + "강 → " + after + "강 🔥\n";
+        out = header + "⚡⚡⚡ 대 성 공 ⚡⚡⚡\n\n💥 도파민 한계 돌파! (+" + realUp + "강)\n\n" + targetLine + "🔥 " + before + "강 → " + after + "강 🔥";
       } else {
-        out += "✨ 성 공 ✨\n깔끔하게 올랐습니다. (+" + realUp + "강)\n🔥 " + before + "강 → " + after + "강 🔥\n";
+        out = header + "✨ 성 공 ✨\n\n깔끔하게 올랐습니다. (+" + realUp + "강)\n\n" + targetLine + "🔥 " + before + "강 → " + after + "강 🔥";
       }
-      commitSave(true);
-      checkAndNotifyTitles(u, replier);
-      replier.reply(out);
       
     } else if (res.kind === "KEEP") {
-      out = header + "💨 유 지 💨\n아무 일도 일어나지 않았습니다.\n(다행인가요?)";
-      commitSave(true);
-      checkAndNotifyTitles(u, replier);
-      replier.reply(out);
+      out = header + "💨 유 지 💨\n\n아무 일도 일어나지 않았습니다.\n(다행인가요?)\n\n" + targetLine + "🔥 현재 유지: " + before + "강";
       
     } else if (res.kind === "RESET0") {
       pD.enh = 0;
-      
-      // 3. [통계] 초기화 횟수 기록
-      if (!u.stats.totalDopaReset) u.stats.totalDopaReset = 0;
-      u.stats.totalDopaReset++;
-
-      out = header + "📉 초 기 화 📉\n모든 강화 수치가 증발했습니다...\n🔥 " + before + "강 → 0강";
-      commitSave(true);
-      checkAndNotifyTitles(u, replier);
-      replier.reply(out);
+      u.stats.totalDopaReset = (u.stats.totalDopaReset || 0) + 1;
+      out = header + "📉 초 기 화 📉\n\n모든 강화 수치가 증발했습니다...\n\n" + targetLine + "🔥 " + before + "강 → 0강";
       
     } else if (res.kind === "EXIT") {
-      // 포켓몬 삭제
       var idxD = -1;
       for (var k=0; k<u.pokemons.length; k++) {
         if (u.pokemons[k].uid === uidD) { idxD = k; break; }
       }
       if (idxD >= 0) {
         u.pokemons.splice(idxD, 1);
-        
-        // 4. [통계] 파괴 횟수 기록
-        if (!u.stats.totalDopaDestroy) u.stats.totalDopaDestroy = 0;
-        u.stats.totalDopaDestroy++;
+        u.stats.totalDopaDestroy = (u.stats.totalDopaDestroy || 0) + 1;
       }
-      out = header + "💀 파 괴 💀\n" + pNameD + "(이)가 도파민을 견디지 못하고 도망쳤습니다...\n(포켓몬 소멸)";
-      commitSave(true);
-      checkAndNotifyTitles(u, replier);
-      replier.reply(out);
+      out = header + "💀 파 괴 💀\n\n도파민을 견디지 못하고 도망쳤습니다!\n(포켓몬 소멸)\n\n" + targetLine;
     }
+
+    commitSave(true);
+    checkAndNotifyTitles(u, replier);
+    replier.reply(out);
     return;
   }
+
   // -------------------- /배틀 --------------------
 if (msg === "/배틀" || msg.indexOf("/배틀 ") === 0) {
   ensureUserStats(u);
