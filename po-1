@@ -689,13 +689,20 @@ function getTotalDexCount() {
   return POKEMON_DB.length;
 }
 function getUserDexCount(u) {
-  if (!u.dex) return 0;
+  if (!u || !u.dex) return 0;
   var cnt = 0;
-  for (var k in u.dex) {
-    if (u.dex[k]) cnt++;
+  
+  // POKEMON_DB(1~151번)라는 '공식 목록'을 기준으로 하나씩 대조합니다.
+  for (var i = 0; i < POKEMON_DB.length; i++) {
+    var pid = String(POKEMON_DB[i].id);
+    // 도감 데이터에 해당 번호가 존재하고, 잡은 횟수(caught)가 최소 1회 이상이어야 인정!
+    if (u.dex[pid] && u.dex[pid].caught > 0) {
+      cnt++;
+    }
   }
   return cnt;
 }
+
 function getDexPercent(u) {
   var total = getTotalDexCount();
   if (total <= 0) return 0;
