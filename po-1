@@ -2382,7 +2382,7 @@ function shopText(d, u, sender) {
   );
 }
 // [수정됨] 아이템 구매 함수 (신규 아이템 + 통계 기록 포함)
-function buyItem(d, u, sender, itemName, qty) {
+function buyItem(d, u, sender, itemName, qty, replier) {
   qty = parseInt(qty, 10);
   if (isNaN(qty)) qty = 1;
   qty = Math.max(1, Math.min(999, qty));
@@ -4176,7 +4176,7 @@ if (msg.indexOf("/판매") === 0) {
       if (isNaN(qty)) 
         qty = 1;
     }
-    var rBuy = buyItem(d, u, sender, item, qty);
+    var rBuy = buyItem(d, u, sender, item, qty, replier);
     if (rBuy.ok) {
       commitSave(true);
       checkAndNotifyTitles(u, replier);
@@ -4308,7 +4308,7 @@ if (msg.indexOf("/판매") === 0) {
   }
    
 // [복구 완료] 포획 담당 함수
-function handleCatch(ballType, ballName, decoName) {
+function handleCatch(ballType, ballName, decoName, replier) {
   var wild = getWild(d, room);
   
   if (!wild) {
