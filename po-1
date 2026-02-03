@@ -4402,9 +4402,9 @@ function handleCatch(ballType, ballName, decoName, replier) {
   return; 
 }
 
-  if (msg === "/몬스터볼" || msg === "/몬" || msg === "/ㅁ") { handleCatch(0, "몬스터볼", decoName); return; }
-  if (msg === "/슈퍼볼" || msg === "/슈" || msg === "/ㅅ") { handleCatch(1, "슈퍼볼", decoName); return; }
-  if (msg === "/하이퍼볼" || msg === "/하" || msg === "/ㅎ") { handleCatch(2, "하이퍼볼", decoName); return; }
+  if (msg === "/몬스터볼" || msg === "/몬" || msg === "/ㅁ") { handleCatch(0, "몬스터볼", decoName, replier); return; }
+  if (msg === "/슈퍼볼" || msg === "/슈" || msg === "/ㅅ") { handleCatch(1, "슈퍼볼", decoName, replier); return; }
+  if (msg === "/하이퍼볼" || msg === "/하" || msg === "/ㅎ") { handleCatch(2, "하이퍼볼", decoName, replier); return; }
 
 // -------------------- [수정됨] 칭호 시스템 (도감 조건 표기 및 번호 선택) --------------------
   if (msg.indexOf("/칭호") === 0) {
