@@ -825,12 +825,12 @@ function normalizeUserData(u) {
   u.pokemons = fixed;
   ensureUserDex(u);
 }
-// ==================== [칭호 시스템 유틸 함수] ====================
+// ==================== [칭호 시스템 통합 유틸] ====================
 
-// 1. 도감 카운트 헬퍼 (칭호 조건 체크용)
+// 1. 도감 카운트 헬퍼 (칭호 조건 체크 전용)
 function getDexCount(u) {
   var cnt = 0;
-  if (u.dex) {
+  if (u && u.dex) {
     for (var k in u.dex) {
       if (u.dex[k].caught > 0) cnt++;
     }
@@ -838,133 +838,113 @@ function getDexCount(u) {
   return cnt;
 }
 
-// 2. 칭호 DB 정의 (손사장님 아이디어 반영)
-var TITLE_DB = [
-  // 🌱 성장
-  { name: "뉴비", check: function(u) { return true; } },
-  { name: "성장 중인", check: function(u) { return u.trainerLv >= 30; } },
-  { name: "고여버린", check: function(u) { return u.trainerLv >= 100; } },
-  { name: "진지충", check: function(u) { return u.trainerLv >= 150; } },
-  { name: "레벨값 못하는", check: function(u) { 
-      var total = u.stats.battleWin + u.stats.battleLose;
-      if (u.trainerLv < 50 || total < 10) return false; 
-      return (u.stats.battleWin / total) < 0.3; 
-    } 
-  },
-
-  // ⚔️ 전투
-  { name: "싸움꾼인", check: function(u) { return u.stats.bestStreak >= 10; } },
-  { name: "강력한", check: function(u) { return u.stats.bestStreak >= 20; } },
-  { name: "도라이", check: function(u) { return u.stats.bestStreak >= 50; } },
-  { name: "배틀마스터", check: function(u) { return u.stats.bestStreak >= 100; } },
-  { name: "최약체인", check: function(u) { return u.stats.maxLoseStreak >= 10; } },
-  { name: "찐따 같은", check: function(u) { return u.stats.maxLoseStreak >= 20; } },
-  { name: "다 패고 다니는", check: function(u) { 
-      return (u.stats.battleWin + u.stats.battleLose + u.stats.battleDraw) >= 1000; 
-    } 
-  },
-
-  // 📖 수집
-  { name: "수집가", check: function(u) { return getDexCount(u) >= 50; } },
-  { name: "수집에 미친", check: function(u) { return getDexCount(u) >= 130; } },
-  { name: "1세대 마스터", check: function(u) { return getDexCount(u) >= 151; } },
-  { name: "잡는 맛을 아는", check: function(u) { return u.pokemons.length >= 150; } },
-  { name: "진정한 1세대 마스터", check: function(u) { 
-      if (getDexCount(u) < 151) return false;
-      for (var k in u.dex) {
-        if (u.dex[k].caught > 0 && u.dex[k].maxGrade !== "S") return false;
-      }
-      return true;
-    } 
-  },
-
-// 💰 경제/도박
-  { name: "백만장자", check: function(u) { return u.gold >= 1000000; } },
-  { name: "천만장자", check: function(u) { return u.gold >= 10000000; } },
-  { name: "일론머스크", check: function(u) { return u.gold >= 150000000; } },
-  { name: "플렉스", check: function(u) { return (u.stats.totalSpentShop || 0) >= 100000000; } },
-  { name: "강화 중독자", check: function(u) { return (u.stats.totalSpentEnhance || 0) >= 100000000; } },
-  { name: "도파민 중독", check: function(u) { return (u.stats.totalDopaUsed || 0) >= 1000; } },
-  { name: "태초마을 러버", check: function(u) { return (u.stats.totalDopaReset || 0) >= 10; } },
-  { name: "포켓몬 장의사", check: function(u) { return (u.stats.totalDopaDestroy || 0) >= 10; } },
-  
-  // 🔥 [신규 추가 완료]
-  { name: "이더리움 홀더", check: function(u) { return u.gold >= 80000000; } },
-  { name: "구슬동자 같은", check: function(u) { 
-      return u.ball >= 100 && u.superBall >= 100 && u.ultraBall >= 100; 
-    } 
-  },
-  { name: "우사인볼트 같은", check: function(u) { return (u.stats.totalEscapes || 0) >= 1000; } },
-  { name: "딴딴한꽂츄", check: function(u) { 
-      // 롱스톤(ID: 95) 60강 확인
-      for(var i=0; i<u.pokemons.length; i++) {
-        var p = u.pokemons[i];
-        if (p.pid === 95 && p.enh >= 60) return true;
-      }
-      return false;
-    } 
-  }
-];
-
-// 3. 칭호 자동 지급 함수 (명령어 칠 때마다 실행됨)
+// 2. [최종 통합] 칭호 자동 지급 로직
 function updateTitles(u) {
-  if (!u.titles) u.titles = [];
+  if (!u.titles) u.titles = ["뉴비"];
   var gained = [];
-  
-  for (var i = 0; i < TITLE_DB.length; i++) {
-    var t = TITLE_DB[i];
-    // 이미 있는 칭호인지 확인 (없으면 조건 체크)
-    if (u.titles.indexOf(t.name) === -1) {
-      if (t.check(u)) {
-        u.titles.push(t.name);
-        gained.push(t.name);
-      }
+
+  // 칭호 추가 보조 함수
+  function check(titleName, condition) {
+    if (u.titles.indexOf(titleName) === -1 && condition) {
+      u.titles.push(titleName);
+      gained.push(titleName);
     }
   }
+
+  // 🌱 성장 관련
+  check("뉴비", true);
+  check("성장 중인", u.trainerLv >= 30);
+  check("고여버린", u.trainerLv >= 100);
+  check("진지충", u.trainerLv >= 150);
+  var totalB = (u.stats.battleWin || 0) + (u.stats.battleLose || 0);
+  var winR = totalB > 0 ? (u.stats.battleWin / totalB) : 1;
+  check("레벨값 못하는", u.trainerLv >= 50 && winR <= 0.3);
+
+  // ⚔️ 전투 관련
+  check("싸움꾼인", u.stats.bestStreak >= 10);
+  check("강력한", u.stats.bestStreak >= 20);
+  check("도라이", u.stats.bestStreak >= 50);
+  check("배틀마스터", u.stats.bestStreak >= 100);
+  check("최약체인", u.stats.loseStreak >= 10);
+  check("찐따 같은", u.stats.loseStreak >= 20);
+  check("다 패고 다니는", (u.stats.battleWin + u.stats.battleLose + u.stats.battleDraw) >= 1000);
+
+  // 📖 수집 관련
+  var caughtCount = getDexCount(u); // 위 1번 함수 사용
+  check("수집가", caughtCount >= 50);
+  check("수집에 미친", caughtCount >= 130);
+  check("1세대 마스터", caughtCount >= 151);
+  check("잡는 맛을 아는", u.pokemons.length >= 150);
+  
+  if (caughtCount >= 151) {
+    var allS = true;
+    for(var k in u.dex) { 
+      if(u.dex[k].caught > 0 && (u.dex[k].maxGrade !== "S")) { allS = false; break; } 
+    }
+    check("진정한 1세대 마스터", allS);
+  }
+
+  // 💰 경제/도박 관련
+  check("백만장자", u.gold >= 1000000);
+  check("천만장자", u.gold >= 10000000);
+  check("이더리움 홀더", u.gold >= 80000000);
+  check("일론머스크", u.gold >= 150000000);
+  check("플렉스", (u.stats.totalSpentShop || 0) >= 100000000);
+  check("강화 중독자", (u.stats.totalSpentEnhance || 0) >= 100000000);
+  check("도파민 중독", (u.stats.totalDopaUsed || 0) >= 1000);
+  check("태초마을 러버", (u.stats.totalDopaReset || 0) >= 10);
+  check("포켓몬 장의사", (u.stats.totalDopaDestroy || 0) >= 10);
+
+  // 🔥 기타 특수 조건
+  check("구슬동자 같은", u.ball >= 100 && u.superBall >= 100 && u.ultraBall >= 100);
+  check("우사인볼트 같은", (u.stats.totalEscapes || 0) >= 1000);
+  check("쫀득한", (u.stats.totalCookieUsed || 0) >= 1000);
+  
+  var sCount = 0;
+  for(var i=0; i<u.pokemons.length; i++) { if(u.pokemons[i].shiny) sCount++; }
+  check("빛나는 대머리", sCount >= 5);
+
+  // 특정 60강 체크
+  for(var j=0; j<u.pokemons.length; j++) {
+    var p = u.pokemons[j];
+    if (p.enh >= 60) {
+      if (p.pid === 95) check("딴딴한꽂츄", true);   // 롱스톤
+      if (p.pid === 145) check("테슬라 대주주", true); // 썬더
+      if (p.pid === 149) check("개망나니", true);     // 망나뇽
+    }
+  }
+
   return gained;
 }
 
-// 4. 닉네임 꾸미기 함수
+// 3. 닉네임 꾸미기
 function getDecoratedName(u, name) {
   if (!u) return name;
   var title = u.activeTitle || "뉴비";
   return title + " " + name; 
 }
 
-// [강력 수정] 원본 배열을 확실하게 수정하고 저장 여부를 반환
+// 4. 데이터 보정 (등급 누락 방지)
 function ensurePokemonGrades(u) {
   if (!u || !u.pokemons || !Array.isArray(u.pokemons)) return false;
-  
   var isChanged = false;
-  
-  // 원본 배열(u.pokemons)을 직접 순회하며 수정
   for (var i = 0; i < u.pokemons.length; i++) {
-    // 여기서 p는 원본 배열의 요소를 참조함
     var p = u.pokemons[i]; 
-
-    // 등급이 없거나(undefined), 유효하지 않은 값일 때만 새로 생성
     if (!p.grade) {
-      // 1. 등급 및 IV 생성
       var newGrade = generatePokemonGrade();
       var newIVs = generateIVsByGrade(newGrade);
-      
-      // 2. 원본 객체에 직접 할당
-      u.pokemons[i].grade = newGrade;
-      u.pokemons[i].ivStr = newIVs.str;
-      u.pokemons[i].ivHp = newIVs.hp;
-      u.pokemons[i].ivSpd = newIVs.spd;
-      
-      // 3. 도감 반영 (최초 1회)
-      if (typeof dexCaught === "function") {
-        dexCaught(u, p.pid, newGrade);
-      }
-      
+      p.grade = newGrade;
+      p.ivStr = newIVs.str;
+      p.ivHp = newIVs.hp;
+      p.ivSpd = newIVs.spd;
+      if (typeof dexCaught === "function") dexCaught(u, p.pid, newGrade);
       isChanged = true;
     }
   }
-  
-  return isChanged; // 변경사항이 있었다면 true
+  return isChanged;
 }
+
+
 // [신규] 포켓몬 ID로 어울리는 지역 찾기
 function getRecommendedRegion(pid) {
   var db = findPokemonDB(pid);
@@ -4426,101 +4406,121 @@ function handleCatch(ballType, ballName, decoName) {
   if (msg === "/슈퍼볼" || msg === "/슈" || msg === "/ㅅ") { handleCatch(1, "슈퍼볼", decoName); return; }
   if (msg === "/하이퍼볼" || msg === "/하" || msg === "/ㅎ") { handleCatch(2, "하이퍼볼", decoName); return; }
 
-  // -------------------- [개선됨] 칭호 시스템 (번호 선택 기능 추가) --------------------
+// -------------------- [수정됨] 칭호 시스템 (도감 조건 표기 및 번호 선택) --------------------
   if (msg.indexOf("/칭호") === 0) {
-    // 1. 칭호 자동 획득 체크 (명령어 칠 때마다 갱신)
-    var gained = updateTitles(u);
-    if (gained.length > 0) {
-      replier.reply("🎉 축하합니다! 새로운 칭호를 획득했습니다!\n" + gained.join(", "));
-      commitSave(true);
-    }
+    // 1. 행동 후 즉시 칭호 체크 (명령어 입력 시점에도 갱신)
+    updateTitles(u); 
 
     var parts = msg.split(" ").filter(Boolean);
-    var sub = parts[1]; // /칭호 [명령]
+    var sub = parts[1]; 
 
-    // 2. 칭호 도감 (전체 목록 확인용)
+    // [A] 칭호 도감 (전체 목록 및 획득 조건 공개)
     if (sub === "도감") {
-      var total = TITLE_DB.length;
-      var collected = 0;
       var listStr = "";
+      // 사장님이 정해주신 칭호와 조건 리스트 (순서대로)
+      var masterList = [
+        { n: "뉴비", c: "유저 회원가입" },
+        { n: "성장 중인", c: "30레벨 달성" },
+        { n: "고여버린", c: "100레벨 달성" },
+        { n: "진지충", c: "150레벨 달성" },
+        { n: "레벨값 못하는", c: "50레벨 이상 승률 30% 이하" },
+        { n: "싸움꾼인", c: "배틀 10연승 달성" },
+        { n: "강력한", c: "배틀 20연승 달성" },
+        { n: "도라이", c: "배틀 50연승 달성" },
+        { n: "배틀마스터", c: "배틀 100연승 달성" },
+        { n: "최약체인", c: "배틀 10연패 달성" },
+        { n: "찐따 같은", c: "배틀 20연패 달성" },
+        { n: "다 패고 다니는", c: "배틀 누적 1,000회" },
+        { n: "수집가", c: "잡은 포켓몬 50종 달성" },
+        { n: "수집에 미친", c: "잡은 포켓몬 130종 달성" },
+        { n: "1세대 마스터", c: "잡은 포켓몬 151종 달성" },
+        { n: "잡는 맛을 아는", c: "보유 포켓몬 150마리 달성" },
+        { n: "진정한 1세대 마스터", c: "도감 151종 & 전원 S등급" },
+        { n: "백만장자", c: "100만 골드 보유" },
+        { n: "천만장자", c: "1,000만 골드 보유" },
+        { n: "이더리움 홀더", c: "8,000만 골드 보유" },
+        { n: "일론머스크", c: "1억 5,000만 골드 보유" },
+        { n: "플렉스", c: "상점 누적 1억 소비" },
+        { n: "강화 중독자", c: "강화 누적 1억 소비" },
+        { n: "도파민 중독", c: "도파민 강화 1,000회 사용" },
+        { n: "태초마을 러버", c: "도파민 0강 초기화 10회 발생" },
+        { n: "포켓몬 장의사", c: "도파민 파괴 10회 발생" },
+        { n: "구슬동자 같은", c: "몬/슈/하 볼 100개씩 보유" },
+        { n: "우사인볼트 같은", c: "도망치기 1,000회 달성" },
+        { n: "딴딴한꽂츄", c: "롱스톤 60강 달성" },
+        { n: "테슬라 대주주", c: "썬더 60강 달성" },
+        { n: "개망나니", c: "망나뇽 60강 달성" },
+        { n: "쫀득한", c: "두쫀쿠 1,000개 사용" },
+        { n: "빛나는 대머리", c: "이로치 포켓몬 5마리 보유" }
+      ];
 
-      for (var i = 0; i < TITLE_DB.length; i++) {
-        var t = TITLE_DB[i];
-        var has = (u.titles.indexOf(t.name) !== -1);
-        
+      var collected = 0;
+      for (var i = 0; i < masterList.length; i++) {
+        var item = masterList[i];
+        var has = (u.titles.indexOf(item.n) !== -1);
         if (has) {
           collected++;
-          listStr += (i+1) + ". " + t.name + " (✅ 획득)\n";
+          listStr += (i + 1) + ". ✅ " + item.n + " (" + item.c + ")\n";
         } else {
-          listStr += (i+1) + ". " + t.name + " (🔒 미획득)\n"; 
+          listStr += (i + 1) + ". 🔒 " + item.n + " (미획득)\n";
         }
+       masterList[i].has = has; // 정렬이나 통계용
       }
 
-      var rate = Math.floor((collected / total) * 100);
+      var rate = Math.floor((collected / masterList.length) * 100);
       replier.reply(
         "🏷️ " + sender + "님의 칭호 도감\n" +
-        "수집률: " + rate + "% (" + collected + "/" + total + ")\n\n" +
+        "수집률: " + rate + "% (" + collected + "/" + masterList.length + ")\n" +
+        "━━━━━━━━━━━━━━\n" +
         listStr + "\n" +
-        "💡 칭호 이름을 보고 획득 조건을 유추해 보세요!"
+        "💡 획득한 칭호만 상세 조건이 공개됩니다!"
       );
       return;
     }
 
-    // 3. 칭호 장착 (번호 또는 이름)
+    // [B] 칭호 장착 (번호/이름)
     if (sub) {
         var targetTitle = "";
-        var num = parseInt(sub, 10); // 숫자로 변환 시도
-
-        // [A] 번호로 입력했을 때 (예: /칭호 3)
+        var num = parseInt(sub, 10);
         if (!isNaN(num)) {
-            var idx = num - 1; // 유저는 1부터 보지만, 배열은 0부터
+            var idx = num - 1;
             if (idx >= 0 && idx < u.titles.length) {
                 targetTitle = u.titles[idx];
             } else {
-                replier.reply("🚫 해당 번호의 칭호를 보유하고 있지 않습니다.\n'/칭호'를 입력해 번호를 확인하세요.");
+                replier.reply("🚫 해당 번호의 칭호를 보유하고 있지 않습니다.");
                 return;
             }
-        } 
-        // [B] 이름으로 입력했을 때 (예: /칭호 수집에 미친) - 띄어쓰기 지원
-        else {
-            // 명령어 뒤에 있는 모든 글자를 합침 (/칭호 수집에 미친 -> 수집에 미친)
+        } else {
             targetTitle = parts.slice(1).join(" ");
-            
-            // "인" 자동 처리 (예: "싸움꾼" 입력 시 "싸움꾼인" 도 체크)
             if (u.titles.indexOf(targetTitle) === -1 && u.titles.indexOf(targetTitle + "인") !== -1) {
                 targetTitle = targetTitle + "인";
             }
         }
 
-        // 보유 확인 및 장착
         if (u.titles.indexOf(targetTitle) !== -1) {
             u.activeTitle = targetTitle;
             commitSave(true);
-            replier.reply("🏷️ 칭호 변경 완료!\n이제부터 '" + targetTitle + " " + sender + "'(으)로 불립니다.");
+            replier.reply("🏷️ 칭호 장착 완료!\n이제부터 '" + targetTitle + " " + sender + "'님으로 표시됩니다.");
         } else {
-            replier.reply("🚫 보유하지 않은 칭호입니다.\n'/칭호'로 보유 목록을 확인하세요.");
+            replier.reply("🚫 보유하지 않은 칭호입니다.");
         }
         return;
     }
 
-    // 4. 내 보유 목록 조회 (/칭호) - 번호 표시 추가!
+    // [C] 내 보유 목록 조회
     var myStr = "";
     for (var j = 0; j < u.titles.length; j++) {
       var tName = u.titles[j];
       var mark = (tName === u.activeTitle) ? "✅" : "⬜";
-      // ★ 번호(j+1)를 같이 보여줘서 선택하기 쉽게 함
       myStr += (j + 1) + ". " + mark + " " + tName + "\n";
     }
 
     replier.reply(
-      "🏷️ " + sender + "님의 보유 칭호\n" +
-      "현재: " + (u.activeTitle || "뉴비") + " " + sender + "\n\n" +
+      "🏷️ " + sender + "님의 보유 칭호 목록\n" +
+      "현재 장착: " + (u.activeTitle || "뉴비") + "\n\n" +
       myStr + "\n" +
-      "💡 사용법\n" +
-      "/칭호 [번호] : 해당 번호의 칭호 장착\n" +
-      "예) /칭호 1\n" +
-      "예) /칭호 4\n" +
-      "/칭호 도감 : 전체 칭호 목록 확인"
+      "💡 사용법: /칭호 [번호]\n" +
+      "💡 전체 목록 확인: /칭호 도감"
     );
     return;
   }
@@ -5195,10 +5195,11 @@ function manageInactiveUsers(d) {
   } else {
     return "✨ 정리할 데이터가 없습니다.";
   }
+}
 function checkAndNotifyTitles(u, replier) {
   var gained = updateTitles(u);
   if (gained && gained.length > 0) {
     replier.reply("🎊 [칭호 획득!] 🎊\n━━━━━━━━━━━━━━\n" + gained.map(n => "['" + n + "']").join(", ") + " 을(를) 얻었습니다!");
   }
-}
+
 }
