@@ -789,9 +789,10 @@ function normalizeUserData(u) {
   if (typeof u.stats.totalDopaReset !== "number") u.stats.totalDopaReset = 0;   // 도파민 초기화 횟수
   if (typeof u.stats.totalDopaDestroy !== "number") u.stats.totalDopaDestroy = 0; // 도파민 파괴 횟수
   if (typeof u.stats.totalEscapes !== "number") u.stats.totalEscapes = 0; // 도망 횟수
+  if (typeof u.stats.totalCookieUsed !== "number") u.stats.totalCookieUsed = 0;   // 두쫀쿠 사용량 (추가)
   if (typeof u.nextSpawnPid !== "number") u.nextSpawnPid = 0; // 0이면 예약 없음
-if (typeof u.nextSpawnPid !== "number") u.nextSpawnPid = 0;
-if (typeof u.nextSpawnShiny !== "boolean") u.nextSpawnShiny = false; // 이로치 예약용
+  if (typeof u.nextSpawnPid !== "number") u.nextSpawnPid = 0;
+  if (typeof u.nextSpawnShiny !== "boolean") u.nextSpawnShiny = false; // 이로치 예약용
 
   if (typeof u.lastAttendanceKey !== "string") u.lastAttendanceKey = "";
   if (!Array.isArray(u.pokemons)) u.pokemons = [];
@@ -2438,6 +2439,7 @@ function buyItem(d, u, sender, itemName, qty) {
   u[field] += qty;
   
   commitSave(true);
+  checkAndNotifyTitles(u, replier);
   return { ok: true, msg: "🛒 " + label + " " + qty + "개 구매 완료!\n💰 잔여 골드: " + fmtNum(u.gold) + "💰" };
 }
 // -------------------- 전적/랭크 --------------------
@@ -3818,8 +3820,11 @@ var decoName = getDecoratedName(u, sender);
 
       u.cookie--;
       p.enh++; 
-      
+
+      u.stats.totalCookieUsed = (u.stats.totalCookieUsed || 0) + 1;
+
       commitSave(true);
+      checkAndNotifyTitles(u, replier);
       var db = findPokemonDB(p.pid);
       replier.reply("🍪 냠냠... 두쫀쿠를 먹었습니다!\n\n✨ " + (db?db.name:"포켓몬") + " 강화 성공!\n🔥 " + (p.enh-1) + "강 → " + p.enh + "강");
       return;
@@ -3865,6 +3870,7 @@ var decoName = getDecoratedName(u, sender);
       u.nextFieldRegion = foundRegion; // 다음 필드 탐색 시 이 지역 확정
       
       commitSave(true);
+      checkAndNotifyTitles(u, replier);
       replier.reply("🎫 티켓을 사용했습니다!\n\n🚀 다음 '/필드' 탐색 시 [" + foundRegion + "] 지역으로 이동합니다.");
       return;
     }
@@ -3895,7 +3901,7 @@ var decoName = getDecoratedName(u, sender);
       dexCaught(u, p.pid, newGrade);
       
       commitSave(true);
-      
+      checkAndNotifyTitles(u, replier);
       var db = findPokemonDB(p.pid);
       replier.reply(
         "🔄 티어 리셋 완료!\n" + (db?db.name:"포켓몬") + "의 잠재력이 변화했습니다.\n\n" +
@@ -3993,7 +3999,7 @@ if (msg.indexOf("/판매 하위") === 0) {
 
   u.gold += totalGold;
   commitSave(true);
-
+  checkAndNotifyTitles(u, replier);
   replier.reply(
     sayDo(decoName, "하위 포켓몬 판매가 완료되었습니다.") +
     "\n\n🧾 판매 내역\n" + soldLines.join("\n") +
@@ -4075,7 +4081,7 @@ if (msg.indexOf("/판매") === 0) {
 
   u.gold += totalGold2;
   commitSave(true);
-
+  checkAndNotifyTitles(u, replier);
   var out =
     sayDo(decoName, "요청하신 포켓몬 판매가 완료되었습니다.") +
     "\n\n🧾 판매 내역\n" + soldLines2.join("\n") +
@@ -4193,6 +4199,7 @@ if (msg.indexOf("/판매") === 0) {
     var rBuy = buyItem(d, u, sender, item, qty);
     if (rBuy.ok) {
       commitSave(true);
+      checkAndNotifyTitles(u, replier);
       replier.reply(rBuy.msg);
     } else {
       replier.reply(rBuy.reason);
@@ -4312,7 +4319,8 @@ if (msg.indexOf("/판매") === 0) {
     u.stats.totalEscapes++;
     
     // 5. 변경사항 저장
-    commitSave(true);
+    commitSave(true);    
+    checkAndNotifyTitles(u, replier);
 
     // 6. 결과 전송 (안전하게 처리된 pName 사용)
     replier.reply(sayDo(decoName, pName + "에게서 무사히 도망쳤습니다! 🏃💨"));
@@ -4366,6 +4374,8 @@ function handleCatch(ballType, ballName, decoName) {
     u.gold += reward.totalGold; 
     addExpWithLevelUpMsg(u, reward.totalExp); 
     commitSave(true); 
+      
+    checkAndNotifyTitles(u, replier);
 
     var fx = ""; 
     if (reward.legendary) fx = legendaryCatchFX(sender, db.name, reward); 
@@ -4515,6 +4525,7 @@ function handleCatch(ballType, ballName, decoName) {
     return;
   }
 
+
   // -------------------- [최종] 도감 시스템 (왕관 효과 & 가독성 개선) --------------------
   if (msg.indexOf("/도감") === 0) {
     var t = getTargetFromMsg(d, sender, msg, "/도감");
@@ -4645,7 +4656,7 @@ if (Math.random() < 0.10) {
     u.gold += gainGold;
     var lvMsg = addExpWithLevelUpMsg(u, gainExp);
     commitSave(true);
-
+    
     // 5. 결과 출력
     var header = "🧭 " + sayDo(decoName, "탐험 결과") + "\n";
     var body = "📍 지역: " + region2 + "\n" +
@@ -4810,11 +4821,13 @@ if (Math.random() < 0.10) {
         out += "✨ 성 공 ✨\n깔끔하게 올랐습니다. (+" + realUp + "강)\n🔥 " + before + "강 → " + after + "강 🔥\n";
       }
       commitSave(true);
+      checkAndNotifyTitles(u, replier);
       replier.reply(out);
       
     } else if (res.kind === "KEEP") {
       out = header + "💨 유 지 💨\n아무 일도 일어나지 않았습니다.\n(다행인가요?)";
       commitSave(true);
+      checkAndNotifyTitles(u, replier);
       replier.reply(out);
       
     } else if (res.kind === "RESET0") {
@@ -4826,6 +4839,7 @@ if (Math.random() < 0.10) {
 
       out = header + "📉 초 기 화 📉\n모든 강화 수치가 증발했습니다...\n🔥 " + before + "강 → 0강";
       commitSave(true);
+      checkAndNotifyTitles(u, replier);
       replier.reply(out);
       
     } else if (res.kind === "EXIT") {
@@ -4843,6 +4857,7 @@ if (Math.random() < 0.10) {
       }
       out = header + "💀 파 괴 💀\n" + pNameD + "(이)가 도파민을 견디지 못하고 도망쳤습니다...\n(포켓몬 소멸)";
       commitSave(true);
+      checkAndNotifyTitles(u, replier);
       replier.reply(out);
     }
     return;
@@ -4885,6 +4900,7 @@ if (msg === "/배틀" || msg.indexOf("/배틀 ") === 0) {
   }
 
   commitSave(true);
+  checkAndNotifyTitles(u, replier);
   replyFold(replier, r1.summary, r1.full);
   return;
 }
@@ -5179,4 +5195,10 @@ function manageInactiveUsers(d) {
   } else {
     return "✨ 정리할 데이터가 없습니다.";
   }
+function checkAndNotifyTitles(u, replier) {
+  var gained = updateTitles(u);
+  if (gained && gained.length > 0) {
+    replier.reply("🎊 [칭호 획득!] 🎊\n━━━━━━━━━━━━━━\n" + gained.map(n => "['" + n + "']").join(", ") + " 을(를) 얻었습니다!");
+  }
+}
 }
