@@ -5201,5 +5201,4 @@ function checkAndNotifyTitles(u, replier) {
   if (gained && gained.length > 0) {
     replier.reply("🎊 [칭호 획득!] 🎊\n━━━━━━━━━━━━━━\n" + gained.map(n => "['" + n + "']").join(", ") + " 을(를) 얻었습니다!");
   }
-
 }
