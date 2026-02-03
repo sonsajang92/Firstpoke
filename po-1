@@ -688,8 +688,13 @@ function sortPokemonsByPower(list) {
 function getTotalDexCount() {
   return POKEMON_DB.length;
 }
-function getDexPercent(u) {
-  return getCaughtPercent(u); // 새로 만든 정확한 함수로 연결
+function getUserDexCount(u) {
+  if (!u.dex) return 0;
+  var cnt = 0;
+  for (var k in u.dex) {
+    if (u.dex[k]) cnt++;
+  }
+  return cnt;
 }
 function getDexPercent(u) {
   var total = getTotalDexCount();
@@ -2369,30 +2374,6 @@ function rollDopaEnhance() {
   return {
   kind: "EXIT"};
 }
-// [수정됨] 도감 카운트 로직 통일 (오직 '잡은' 포켓몬만 계산)
-function getUserCaughtCount(u) {
-  if (!u || !u.dex) return 0;
-  var cnt = 0;
-  
-  // POKEMON_DB를 기준으로 실제 존재하는 포켓몬만 체크
-  for (var i = 0; i < POKEMON_DB.length; i++) {
-    var pid = String(POKEMON_DB[i].id);
-    // dex 데이터에 해당 ID가 있고, caught(잡은 횟수)가 1 이상이어야 함
-    if (u.dex[pid] && u.dex[pid].caught > 0) {
-      cnt++;
-    }
-  }
-  return cnt;
-}
-
-// 퍼센트 계산도 통일
-function getCaughtPercent(u) {
-  var total = POKEMON_DB.length;
-  if (total <= 0) return 0;
-  var caught = getUserCaughtCount(u);
-  return Math.floor((caught / total) * 1000) / 10;
-}
-
 // -------------------- 상점 --------------------
 function shopText(d, u, sender) {
   return (
@@ -4249,9 +4230,6 @@ if (msg.indexOf("/판매") === 0) {
       u.nextSpawnShiny = false;
       u.nextFieldRegion = ""; // 티켓 예약 무시
       
-      // 예약 스폰 전용 자연스러운 지역 이동 멘트
-      replier.reply("🏃 주변을 탐색하다가 새로운 지역 [" + region + "]에 들어섰습니다...");
-
     } else if (u.nextFieldRegion) {
       // [B] 이동 티켓 예약이 있을 때
       region = u.nextFieldRegion;
@@ -4543,9 +4521,8 @@ function handleCatch(ballType, ballName, decoName) {
 
     ensureUserDex(target);
 
-    var uniqueCaught = getUserCaughtCount(target); // ★ 여기도 통일!
     var total = POKEMON_DB.length;
-    var rate = getCaughtPercent(target); // ★ 퍼센트도 통일!
+    var uniqueCaught = 0;
 
     for (var i = 0; i < POKEMON_DB.length; i++) {
       var id = String(POKEMON_DB[i].id);
@@ -4554,7 +4531,7 @@ function handleCatch(ballType, ballName, decoName) {
 
     var rate = Math.floor((uniqueCaught / total) * 1000) / 10;
 
-      var summary =
+    var summary =
       "📖 " + targetName + "님의 포켓몬 도감\n" +
       "━━━━━━━━━━━━━━\n" +
       "✅ 획득: " + uniqueCaught + " / " + total + " (" + rate + "%)\n\n" +
@@ -5017,45 +4994,33 @@ if (msg.indexOf("/랭킹") === 0) {
 
   var typeR = partsR[1];
 
-// [수정됨] 도감 랭킹 빌더
-function buildDexRankingWithMyRank(d, limit, myName) {
-  limit = limit || 10;
-  var list = [];
-  var total = POKEMON_DB.length;
+  // ---------- 도감 랭킹 ----------
+  if (typeR === "도감") {
+    var data = buildDexRankingWithMyRank(d, 10, sender);
 
-  for (var name in d.users) {
-    var u = d.users[name];
-    if (!u) continue;
+    if (!data.rows || data.rows.length === 0) {
+      replier.reply("아직 도감 기록이 있는 트레이너가 없습니다.");
+      return;
+    }
 
-    // ★ 통일된 함수 사용!
-    var count = getUserCaughtCount(u); 
-    if (count <= 0) continue;
+    var out = blockTitle("📘 도감 랭킹 TOP 10\n(수집률 기준)") + "\n";
 
-    list.push({
-      name: name,
-      count: count,
-      percent: getCaughtPercent(u)
-    });
+    for (var i = 0; i < data.top.length; i++) {
+      var rr = data.top[i];
+      out += (i + 1) + "위. " + rr.name + " — " + rr.percent + "% (" + rr.count + "/" + data.total + ")\n";
+    }
+
+    out += "\n[내 기록]\n";
+    if (data.myIdx >= 0) {
+      var me = data.rows[data.myIdx];
+      out += (data.myIdx + 1) + "위. " + sender + " — " + me.percent + "% (" + me.count + "/" + data.total + ")";
+    } else {
+      out += "도감 기록이 없어 순위에 포함되지 않았습니다.";
+    }
+
+    replier.reply(out);
+    return;
   }
-
-  // 정렬 (개수 많은 순 -> 이름 가나다 순)
-  list.sort(function(a, b) {
-    if (b.count !== a.count) return b.count - a.count;
-    return String(a.name).localeCompare(String(b.name));
-  });
-
-  var myIdx = -1;
-  for (var j = 0; j < list.length; j++) {
-    if (list[j].name === myName) { myIdx = j; break; }
-  }
-
-  return {
-    rows: list,
-    myIdx: myIdx,
-    total: total,
-    top: list.slice(0, Math.min(limit, list.length))
-  };
-}
 
   // ---------- 전투력 랭킹 ----------
   if (typeR === "전투력") {
