@@ -1,4 +1,8 @@
 var scriptName = "죠봇 포켓몬";
+
+// ★ [신규] 깃허브 자동 업데이트용 변수
+var GITHUB_RAW_URL = "https://raw.githubusercontent.com/sonsajang92/Firstpoke/main/po-1";
+var SCRIPT_NAME = "죠봇 포켓몬"; // 메신저봇R 앱에 적힌 이름과 정확히 일치해야 함
 // -------------------- 전체보기(접기) SAFE --------------------
 // 카톡/메신저봇R에서 너무 긴 메시지는 전송 실패/크래시 유발 가능
 function replyFold(replier, summary, full) {
@@ -3352,15 +3356,57 @@ function response(room, msg, sender, isGroupChat, replier) {
     ROOM_ACTIVE_MEM[MATCH_POOL] = {};
   ROOM_ACTIVE_MEM[MATCH_POOL][sender] = Date.now();
   var d = getDataCached();
-  if (msg.indexOf("/관리자") === 0) {
+ if (msg.indexOf("/관리자") === 0) {
     if (!isAdmin(sender)) {
       replier.reply("운영자만 사용할 수 있는 명령어입니다.");
       return;
     }
     var parts = msg.split(" ").filter(Boolean);
-    // parts[0] = /관리자
     var sub = parts[1] || "도움";
-    // ==================== 도움 ====================
+
+    // -------------------- [시스템] 자동 업데이트 --------------------
+    if (sub === "업데이트") {
+      replier.reply("⏳ 깃허브에서 최신 코드를 받아오는 중입니다...\n" + GITHUB_RAW_URL);
+      
+      try {
+        // 1. Jsoup으로 깃허브 Raw 코드 긁어오기
+        var newCode = org.jsoup.Jsoup.connect(GITHUB_RAW_URL).ignoreContentType(true).execute().body();
+        
+        if (!newCode || newCode.length < 100) {
+          replier.reply("🚫 코드를 가져오는데 실패했습니다. (내용이 너무 짧거나 비어있음)");
+          return;
+        }
+
+        // 2. 현재 스크립트 파일 덮어쓰기
+        // 경로: /sdcard/msgbot/Bots/스크립트명.js
+        var path = "/sdcard/msgbot/Bots/" + SCRIPT_NAME + ".js";
+        var file = new java.io.File(path);
+        
+        // 백업 저장 (선택사항: 혹시 모르니 .bak 파일 하나 생성)
+        var backupPath = path + ".bak";
+        var currentCode = readFile(path); // 기존 readFile 함수 활용
+        if (currentCode) writeFile(backupPath, currentCode);
+
+        // 새 코드 저장
+        var fos = new java.io.FileOutputStream(file);
+        var str = new java.lang.String(newCode);
+        fos.write(str.getBytes());
+        fos.close();
+        
+        // 3. 봇 재로딩 (컴파일)
+        replier.reply("✅ 다운로드 완료! 봇을 재로딩합니다...");
+        Api.reload(SCRIPT_NAME); 
+        
+        return;
+
+      } catch (e) {
+        replier.reply("❌ 업데이트 실패!\n" + e);
+        java.lang.System.out.println(e); // 로그 출력
+      }
+      return;
+    }
+
+    // -------------------- [기본] 도움말 & 설정 --------------------
     if (sub === "도움") {
       replier.reply(adminHelpText());
       return;
@@ -3372,525 +3418,292 @@ function response(room, msg, sender, isGroupChat, replier) {
     if (sub === "전역설정") {
       var key = parts[2];
       var val = parseInt(parts[3], 10);
-      if (!key) {
-        replier.reply("사용법: /관리자 전역설정 SHOP_PRICE_DOPA 15000");
-        return;
-      }
-      if (isNaN(val) || val < 0) {
-        replier.reply("설정 값이 올바르지 않습니다.");
-        return;
-      }
-      if (key === "SHOP_PRICE_BALL") 
-        setShopPrice(d, "BALL", val);
-      else if (key === "SHOP_PRICE_SUPER") 
-        setShopPrice(d, "SUPER", val);
-      else if (key === "SHOP_PRICE_ULTRA") 
-        setShopPrice(d, "ULTRA", val);
-      else if (key === "SHOP_PRICE_DOPA") 
-        setShopPrice(d, "DOPA", val);
-      else {
-        replier.reply("전역설정 가능한 키\n\n" + "SHOP_PRICE_BALL\nSHOP_PRICE_SUPER\nSHOP_PRICE_ULTRA\nSHOP_PRICE_DOPA");
-        return;
+      if (!key) { replier.reply("사용법: /관리자 전역설정 변수명 값"); return; }
+      
+      if (key.indexOf("SHOP_PRICE") !== -1) {
+          if (key === "SHOP_PRICE_BALL") setShopPrice(d, "BALL", val);
+          else if (key === "SHOP_PRICE_SUPER") setShopPrice(d, "SUPER", val);
+          else if (key === "SHOP_PRICE_ULTRA") setShopPrice(d, "ULTRA", val);
+          else if (key === "SHOP_PRICE_DOPA") setShopPrice(d, "DOPA", val);
+          else { replier.reply("알 수 없는 상점 키입니다."); return; }
+      } else {
+          // 기타 플래그 설정 등 확장 가능
+          replier.reply("지원하지 않는 설정 키입니다.");
+          return;
       }
       addAdminLog(d, sender, "전역설정 " + key + "=" + val);
       commitSave(true);
-      replier.reply("전역설정 완료\n" + key + " = " + val);
+      replier.reply("✅ 설정 완료: " + key + " = " + val);
       return;
     }
+
+    // -------------------- [서버 관리] 공지/저장/정리 --------------------
     if (sub === "공지") {
       var text = msg.replace("/관리자 공지", "").trim();
-      if (!text) {
-        replier.reply("사용법: /관리자 공지 내용...");
-        return;
-      }
+      if (!text) { replier.reply("공지 내용을 입력하세요."); return; }
       addAdminLog(d, sender, "공지: " + text);
       commitSave(true);
-      replier.reply("📢 공지\n\n" + text);
-      return;
-    }    // [추가] 데이터 정리 명령어
-    if (sub === "데이터정리") {
-      // manageInactiveUsers 함수는 맨 아래에 선언되어 있어야 합니다.
-      var result = manageInactiveUsers(d); 
-      replier.reply(result);
+      replier.reply("📢 [공지사항]\n\n" + text);
       return;
     }
-    
-    if (sub === "전체보상") {
-      var item = parts[2];
-      var amt = parseInt(parts[3], 10);
-      if (!item || isNaN(amt) || amt <= 0) { replier.reply("사용법: /관리자 전체보상 [항목] [수량]"); return; }
-      
-      var count = 0;
-      for (var name in d.users) {
-        if (!d.users.hasOwnProperty(name)) continue;
-        var uu = d.users[name];
-        
-        if (item === "골드") uu.gold = (uu.gold||0) + amt;
-        else if (item === "도파민" || item === "강화권") uu.dopaTicket = (uu.dopaTicket||0) + amt;
-        else if (item === "두쫀쿠" || item === "쿠키") uu.cookie = (uu.cookie||0) + amt;
-        else if (item === "티어리셋" || item === "리셋") uu.reroll = (uu.reroll||0) + amt;
-        else if (item === "이동티켓" || item === "티켓") uu.ticket = (uu.ticket||0) + amt;
-        else if (item === "몬스터볼") uu.ball = (uu.ball||0) + amt;
-        else if (item === "슈퍼볼") uu.superBall = (uu.superBall||0) + amt;
-        else if (item === "하이퍼볼") uu.ultraBall = (uu.ultraBall||0) + amt;
-        else if (item === "킹갓볼") uu.godBall = (uu.godBall||0) + amt;
-        else { replier.reply("지원하지 않는 전체보상 항목입니다."); return; }
-        
-        count++;
-      }
-      addAdminLog(d, sender, "전체보상 " + item + " +" + amt);
-      commitSave(true);
-      replier.reply("📢 전체보상 지급 완료!\n항목: " + item + " +" + amt + "\n총 " + count + "명에게 지급됨.");
-      return;
-    }
-
-    if (sub === "조회") {
-      var targetName = parts[2];
-      var t = getUserByName(d, targetName);
-      if (!t) {
-        replier.reply("대상 유저를 찾을 수 없습니다.");
-        return;
-      }
-      var uu = t.user;
-      replier.reply("유저 조회: " + t.name + "\n\n" + "레벨: " + uu.trainerLv + "\n" + "경험치: " + uu.trainerExp + "\n" + "골드: " + uu.gold + "💰\n" + "볼: 몬스터볼 " + uu.ball + " | 슈퍼볼 " + uu.superBall + " | 하이퍼볼 " + uu.ultraBall + "\n" + "도파민강화권: " + uu.dopaTicket + "\n" + "보유 포켓몬 수: " + (uu.pokemons ? uu.pokemons.length : 0));
-      return;
-    }
- // [수정됨] 관리자 지급 기능 (모든 신규 아이템 추가)
-    if (sub === "지급") {
-      var tn = parts[2];
-      var fieldK = parts[3];
-      var amt2 = parseInt(parts[4], 10);
-      
-      var t2 = getUserByName(d, tn);
-      if (!t2) {
-        replier.reply("대상 유저를 찾을 수 없습니다.");
-        return;
-      }
-      if (isNaN(amt2) || amt2 <= 0) {
-        replier.reply("지급 수량이 올바르지 않습니다.");
-        return;
-      }
-      
-      var u2 = t2.user;
-      var logName = fieldK; // 로그에 남길 이름
-
-      if (fieldK === "골드") {
-        u2.gold += amt2;
-      } else if (fieldK === "경험치") {
-        u2.trainerExp += amt2;
-      } else if (fieldK === "레벨") {
-        u2.trainerLv += amt2;
-        if (u2.trainerLv < 1) u2.trainerLv = 1;
-        if (u2.trainerLv > 99) u2.trainerLv = 99;
-      } 
-      // --- [기본 볼] ---
-      else if (fieldK === "몬스터볼") {
-        if (!u2.ball) u2.ball = 0;
-        u2.ball += amt2;
-      } else if (fieldK === "슈퍼볼") {
-        if (!u2.superBall) u2.superBall = 0;
-        u2.superBall += amt2;
-      } else if (fieldK === "하이퍼볼") {
-        if (!u2.ultraBall) u2.ultraBall = 0;
-        u2.ultraBall += amt2;
-      } 
-      // --- [특수 아이템] ---
-      else if (fieldK === "도파민" || fieldK === "강화권") {
-        if (!u2.dopaTicket) u2.dopaTicket = 0;
-        u2.dopaTicket += amt2;
-        logName = "도파민강화권";
-      } else if (fieldK === "두쫀쿠" || fieldK === "쿠키") {
-        if (!u2.cookie) u2.cookie = 0;
-        u2.cookie += amt2;
-        logName = "두쫀쿠";
-      } else if (fieldK === "이동티켓" || fieldK === "티켓") {
-        if (!u2.ticket) u2.ticket = 0;
-        u2.ticket += amt2;
-        logName = "이동티켓";
-      } else if (fieldK === "티어리셋" || fieldK === "리셋" || fieldK === "티어리셋권") {
-        if (!u2.reroll) u2.reroll = 0;
-        u2.reroll += amt2;
-        logName = "티어리셋권";
-      } else if (fieldK === "킹갓볼" || fieldK === "랄부볼" || fieldK.indexOf("킹갓") !== -1) {
-        if (!u2.godBall) u2.godBall = 0;
-        u2.godBall += amt2;
-        logName = "슈퍼울트라(생략)킹갓볼";
-      } 
-      else {
-        replier.reply("🚫 지급 가능한 항목: 골드/경험치/레벨/몬스터볼/슈퍼볼/하이퍼볼/도파민/두쫀쿠/이동티켓/티어리셋/킹갓볼");
-        return;
-      }
-
-      addAdminLog(d, sender, "지급 " + t2.name + " " + logName + " +" + amt2);
-      commitSave(true);
-      replier.reply("✅ 지급 완료\n\n" + "대상: " + t2.name + "\n" + "항목: " + logName + "\n" + "수량: +" + amt2);
-      return;
-    }
-// [신규] 관리자 저장
     if (sub === "저장") {
       saveData(d);
       replier.reply("💾 데이터 강제 저장 완료.");
       return;
     }
-
-    // [신규] 이로치 토글
-    if (sub === "이로치") {
-      var tName = parts[2];
-      var uid = parseInt(parts[3], 10);
-      var tU = getUserByName(d, tName);
-      if (!tU || isNaN(uid)) { replier.reply("사용법: /관리자 이로치 [닉네임] [UID]"); return; }
-      
-      var p = findUserPokemonByUid(tU.user, uid);
-      if (!p) { replier.reply("포켓몬을 찾을 수 없습니다."); return; }
-      
-      p.shiny = !p.shiny; // 상태 반전
-      commitSave(true);
-      replier.reply("✨ " + tName + "님의 포켓몬(#" + uid + ") 이로치 상태 변경: " + (p.shiny ? "ON" : "OFF"));
+    if (sub === "데이터정리") {
+      var res = manageInactiveUsers(d);
+      replier.reply(res);
       return;
     }
 
-    // [신규] 잠재력(IV) 에디트
-    if (sub === "잠재력") {
-      var tName = parts[2];
-      var uid = parseInt(parts[3], 10);
-      var str = parseInt(parts[4], 10);
-      var hp = parseInt(parts[5], 10);
-      var spd = parseInt(parts[6], 10);
-      
-      var tU = getUserByName(d, tName);
-      if (!tU || isNaN(uid) || isNaN(str)) { 
-          replier.reply("사용법: /관리자 잠재력 [닉네임] [UID] [힘] [체력] [민첩]\n(예: ... 15 150 15)"); return; 
-      }
-      
-      var p = findUserPokemonByUid(tU.user, uid);
-      if (!p) { replier.reply("포켓몬을 찾을 수 없습니다."); return; }
-      
-      p.ivStr = str; p.ivHp = hp; p.ivSpd = spd;
-      
-      // 등급 자동 재계산 (간단 버전)
-      var score = str + Math.floor(hp/10) + spd;
-      if (score >= 38) p.grade = "S";
-      else if (score >= 28) p.grade = "A";
-      else if (score >= 19) p.grade = "B";
-      else if (score >= 10) p.grade = "C";
-      else p.grade = "D";
-      
-      commitSave(true);
-      replier.reply("💪 " + tName + "님의 포켓몬(#" + uid + ") 잠재력 변경 완료!\n등급: " + p.grade);
-      return;
-    }
-        // -------------------- [신규] 계정 이동 (닉변 유저 구제용) --------------------
-    if (sub === "계정이동" || sub === "닉변") {
-      var oldName = parts[2]; // 예: Moon
-      var newName = parts[3]; // 예: 문용태
-      
-      if (!oldName || !newName) {
-        replier.reply("사용법: /관리자 계정이동 [옛날닉네임] [새로운닉네임]\n예: /관리자 계정이동 Moon 문용태");
-        return;
-      }
-
-      var oldUser = d.users[oldName];
-      if (!oldUser) {
-        replier.reply("🚫 '" + oldName + "'(전 닉네임)의 데이터가 존재하지 않습니다.");
-        return;
-      }
-
-      // [핵심] 데이터 덮어쓰기 (Deep Copy)
-      // 문용태(새 닉네임) 자리에 Moon(헌 닉네임) 데이터를 복사해서 넣음
-      d.users[newName] = JSON.parse(JSON.stringify(oldUser));
-      
-      // 기존 닉네임 데이터 삭제 (복사했으니 삭제해서 중복 방지)
-      delete d.users[oldName];
-
-      addAdminLog(d, sender, "계정이동: " + oldName + " -> " + newName);
-      commitSave(true);
-      
-      replier.reply(
-        "✅ 계정 이동 완료!\n\n" +
-        "📤 기존: " + oldName + " (삭제됨)\n" +
-        "📥 신규: " + newName + " (데이터 복구됨)\n\n" +
-        "이제 '" + newName + "'님은 기존 데이터를 그대로 사용할 수 있습니다."
-      );
-      return;
-    }
-    
-    // /관리자 전적초기화
-if (sub === "전적초기화") {
-  var n = resetBattleStatsAll(d);
-  commitSave(true);
-  replier.reply("배틀 전적 초기화 완료: " + n + "명");
-  return;
-}
-
-  // /관리자 전적초기화 닉네임
-if (sub === "전적초기화") {
-  var target = parts[2]; // 없으면 전체
-  if (target) {
-    var t = getUserByName(d, target);
-    if (!t) { replier.reply("대상 유저를 찾을 수 없습니다."); return; }
-    resetBattleStats(t.user);
-    commitSave(true);
-    replier.reply("배틀 전적 초기화 완료: " + t.name);
-    return;
-  }
-
-  var n = resetBattleStatsAll(d);
-  commitSave(true);
-  replier.reply("배틀 전적 초기화 완료: " + n + "명");
-  return;
-}
-    if (sub === "설정") {
-      var tn3 = parts[2];
-      var fieldK2 = parts[3];
-      var val2 = parseInt(parts[4], 10);
-      var t3 = getUserByName(d, tn3);
-      if (!t3) {
-        replier.reply("대상 유저를 찾을 수 없습니다.");
-        return;
-      }
-      if (isNaN(val2)) {
-        replier.reply("설정 값이 올바르지 않습니다.");
-        return;
-      }
-      var u3 = t3.user;
-      if (fieldK2 === "레벨") {
-        u3.trainerLv = Math.max(1, Math.min(99, val2));
-        addAdminLog(d, sender, "설정 " + t3.name + " 레벨=" + u3.trainerLv);
-      } else if (fieldK2 === "경험치") {
-        u3.trainerExp = Math.max(0, val2);
-        addAdminLog(d, sender, "설정 " + t3.name + " 경험치=" + u3.trainerExp);
-      } else if (fieldK2 === "골드") {
-        u3.gold = Math.max(0, val2);
-        addAdminLog(d, sender, "설정 " + t3.name + " 골드=" + u3.gold);
-      } else if (fieldK2 === "강화권" || fieldK2 === "도파민") {
-        u3.dopaTicket = Math.max(0, val2);
-        addAdminLog(d, sender, "설정 " + t3.name + " 도파민강화권=" + u3.dopaTicket);
-      } else {
-        replier.reply("설정 가능한 항목: 레벨/경험치/골드/강화권/도파민");
-        return;
-      }
-      commitSave(true);
-      replier.reply("설정 완료\n\n" + "대상: " + t3.name + "\n" + "항목: " + fieldK2 + "\n" + "값: " + val2);
-      return;
-    }
-    // ==================== 포켓몬 강화 조정 ====================
-if (sub === "강화") {
-  var targetName = parts[2];
-  var uid = parseInt(parts[3], 10);
-  var enh = parseInt(parts[4], 10);
-
-  if (!targetName || isNaN(uid) || isNaN(enh)) {
-    replier.reply(
-      "사용법: /관리자 강화 닉네임 포켓몬UID 강화수치\n" +
-      "예: /관리자 강화 손사장 123 15"
-    );
-    return;
-  }
-
-  enh = Math.max(0, Math.min(ENHANCE_MAX, enh));
-
-  var t = getUserByName(d, targetName);
-  if (!t) {
-    replier.reply("대상 유저를 찾을 수 없습니다.");
-    return;
-  }
-
-  var u2 = t.user;
-  var list = u2.pokemons || [];
-  var p = null;
-
-  for (var i = 0; i < list.length; i++) {
-    if (list[i].uid === uid) {
-      p = list[i];
-      break;
-    }
-  }
-
-  if (!p) {
-    replier.reply("해당 UID의 포켓몬을 찾을 수 없습니다.");
-    return;
-  }
-
-  var before = p.enh || 0;
-  p.enh = enh;
-
-  // 자동 진화 체크 (있으면)
-  if (typeof tryAutoEvolveByEnh === "function") {
-    tryAutoEvolveByEnh(p);
-  }
-
-  var dbp = findPokemonDB(p.pid);
-  var name = dbp ? dbp.name : "포켓몬";
-
-  addAdminLog(
-    d,
-    sender,
-    "강화조정 " + t.name + " #" + uid + " " + before + "→" + enh
-  );
-
-  commitSave(true);
-
-  replier.reply(
-    "🛠 운영자 강화 조정 완료\n\n" +
-    "대상: " + t.name + "\n" +
-    "포켓몬: #" + uid + " " + name + "\n" +
-    "강화 단계: " + before + "강 → " + enh + "강"
-  );
-  return;
-}
-    if (sub === "포켓몬") {
-      var tn4 = parts[2];
-      var t4 = getUserByName(d, tn4);
-      if (!t4) {
-        replier.reply("대상 유저를 찾을 수 없습니다.");
-        return;
-      }
-      var list = t4.user.pokemons || [];
-      if (list.length === 0) {
-        replier.reply("대상 유저가 보유한 포켓몬이 없습니다.");
-        return;
-      }
-      var out = "포켓몬 목록: " + t4.name + "\n\n";
-      for (var i = 0; i < list.length; i++) {
-        var pp = list[i];
-        var dbp = findPokemonDB(pp.pid);
-        var nm = dbp ? dbp.name : ("PID " + pp.pid);
-        out += "#" + pp.uid + " " + nm + " " + (pp.enh || 0) + "강\n";
-      }
-      replier.reply(out);
-      return;
-    }
-// [수정됨] 관리자 포켓몬 지급 (통합된 nextPokemonUid 사용)
-    if (sub === "포켓몬지급") {
-      var tnP = parts[2];
-      var pokeKey = parts[3];
-      if (!tnP || !pokeKey) {
-        replier.reply("사용법: /관리자 포켓몬지급 닉네임 포켓몬명(or ID)");
-        return;
-      }
-      var tP = getUserByName(d, tnP);
-      if (!tP) {
-        replier.reply("대상 유저를 찾을 수 없습니다.");
-        return;
-      }
-      var dbp = null;
-      var pid = parseInt(pokeKey, 10);
-      if (!isNaN(pid)) {
-        // 숫자면 기존 findPokemonDB를 우선 사용
-        if (typeof findPokemonDB === "function") 
-          dbp = findPokemonDB(pid);
-        if (!dbp && typeof POKEMON_DB !== "undefined" && POKEMON_DB && POKEMON_DB.length) {
-          for (var i = 0; i < POKEMON_DB.length; i++) {
-            var it = POKEMON_DB[i];
-            if (!it) 
-              continue;
-            if (it.id === pid || it.pid === pid || it.no === pid || it.num === pid) {
-              dbp = it;
-              break;
-            }
-          }
-        }
-      } else {
-        // 문자열이면 이름 검색
-        dbp = findPokemonDBByName(pokeKey);
-      }
-      if (!dbp) {
-        replier.reply("해당 포켓몬을 찾을 수 없습니다. (이름/번호 확인)");
-        return;
-      }
-      var uP = tP.user;
-      if (!uP.pokemons) 
-        uP.pokemons = [];
-
-      // ★ [핵심 수정] 함수 이름 변경! (nextPokemonUIDForUser -> nextPokemonUid)
-      var newUid = nextPokemonUid(uP); 
-
-      // dbp의 id/pid 중 뭐가 실제 번호인지 모호할 수 있어서 안전하게 처리
-      var realPid = (typeof dbp.id === "number") ? dbp.id : (typeof dbp.pid === "number" ? dbp.pid : pid);
-      var newPoke = {
-        uid: newUid, 
-        pid: realPid, 
-        enh: 0
-      };
-      uP.pokemons.push(newPoke);
-      // 도감 기록 처리 (있으면)
-      if (typeof dexSeen === "function") {
-        dexSeen(uP, realPid);
-      }
-      var nm = dbp.name ? dbp.name : ("PID " + realPid);
-      addAdminLog(d, sender, "포켓몬지급 " + tP.name + " " + nm + " #" + newUid);
-      commitSave(true);
-      replier.reply("포켓몬 지급 완료\n\n" + "대상: " + tP.name + "\n" + "포켓몬: " + nm + "\n" + "UID: #" + newUid);
-      return;
-    }
-if (sub === "스폰예약" || sub === "스폰") {
+    // -------------------- [조회] --------------------
+    if (sub === "조회") {
       var targetName = parts[2];
-      var pokeKey = parts[3]; 
-      var shinyOpt = parts[4]; // Y 또는 N (선택사항)
-      
-      if (!targetName || !pokeKey) {
-        replier.reply("사용법: /관리자 스폰 [닉네임] [포켓몬명/ID] [이로치(Y/N)]");
-        return;
-      }
-
       var t = getUserByName(d, targetName);
-      if (!t) { replier.reply("대상 유저를 찾을 수 없습니다."); return; }
+      if (!t) { replier.reply("유저를 찾을 수 없습니다."); return; }
+      var uu = t.user;
+      replier.reply("🔎 " + t.name + " 정보\nLv." + uu.trainerLv + " / " + fmtNum(uu.gold) + "💰\n포켓몬: " + (uu.pokemons?uu.pokemons.length:0) + "마리\n가방: 몬" + uu.ball + "/슈" + uu.superBall + "/하" + uu.ultraBall + "/도파민" + uu.dopaTicket);
+      return;
+    }
 
-      var dbp = isNaN(parseInt(pokeKey)) ? findPokemonDBByName(pokeKey) : findPokemonDB(pokeKey);
-      if (!dbp) { replier.reply("해당 포켓몬을 찾을 수 없습니다."); return; }
-
-      t.user.nextSpawnPid = dbp.id;
-      // Y라고 적으면 무조건 이로치, 아니면 일반
-      t.user.nextSpawnShiny = (shinyOpt === "Y" || shinyOpt === "y"); 
+    // -------------------- [지급] 전체보상 & 개별지급 --------------------
+    if (sub === "전체보상") {
+      var item = parts[2];
+      var amt = parseInt(parts[3], 10);
+      if (!item || isNaN(amt)) { replier.reply("사용법: /관리자 전체보상 [항목] [수량]"); return; }
       
-      addAdminLog(d, sender, "스폰예약 " + t.name + " -> " + dbp.name + (t.user.nextSpawnShiny ? "(✨)" : ""));
+      var count = 0;
+      for (var name in d.users) {
+        if (!d.users.hasOwnProperty(name)) continue;
+        var uu = d.users[name];
+        // 지급 로직 매핑
+        if (item === "골드") uu.gold = (uu.gold||0) + amt;
+        else if (item === "도파민" || item === "강화권") uu.dopaTicket = (uu.dopaTicket||0) + amt;
+        else if (item === "두쫀쿠" || item === "쿠키") uu.cookie = (uu.cookie||0) + amt;
+        else if (item === "티어리셋" || item === "리셋") uu.reroll = (uu.reroll||0) + amt;
+        else if (item === "이동티켓" || item === "티켓") uu.ticket = (uu.ticket||0) + amt;
+        else if (item === "킹갓볼" || item.indexOf("킹갓")!==-1) uu.godBall = (uu.godBall||0) + amt;
+        else if (item === "몬스터볼") uu.ball = (uu.ball||0) + amt;
+        else if (item === "슈퍼볼") uu.superBall = (uu.superBall||0) + amt;
+        else if (item === "하이퍼볼") uu.ultraBall = (uu.ultraBall||0) + amt;
+        else { replier.reply("지원하지 않는 항목입니다."); return; }
+        count++;
+      }
+      addAdminLog(d, sender, "전체보상 " + item + " " + amt);
       commitSave(true);
-      replier.reply("✅ " + t.name + "님에게 [" + dbp.name + (t.user.nextSpawnShiny ? "✨" : "") + "] 예약 완료.");
+      replier.reply("📢 전체보상 지급 완료 (" + count + "명)\n항목: " + item + " +" + amt);
       return;
     }
+
+    if (sub === "지급") {
+      var tn = parts[2];
+      var fieldK = parts[3];
+      var amt2 = parseInt(parts[4], 10);
+      var t2 = getUserByName(d, tn);
+      if (!t2) { replier.reply("유저를 찾을 수 없습니다."); return; }
+      if (isNaN(amt2)) { replier.reply("수량을 입력하세요."); return; }
+      
+      var u2 = t2.user;
+      var logName = fieldK;
+
+      if (fieldK === "골드") u2.gold += amt2;
+      else if (fieldK === "경험치") u2.trainerExp += amt2;
+      else if (fieldK === "레벨") u2.trainerLv = Math.max(1, Math.min(99, u2.trainerLv + amt2));
+      
+      // 아이템
+      else if (fieldK === "몬스터볼") { u2.ball = (u2.ball||0)+amt2; }
+      else if (fieldK === "슈퍼볼") { u2.superBall = (u2.superBall||0)+amt2; }
+      else if (fieldK === "하이퍼볼") { u2.ultraBall = (u2.ultraBall||0)+amt2; }
+      else if (fieldK === "킹갓볼" || fieldK.indexOf("킹갓")!==-1) { u2.godBall = (u2.godBall||0)+amt2; logName="킹갓볼"; }
+      
+      else if (fieldK === "도파민" || fieldK === "강화권") { u2.dopaTicket = (u2.dopaTicket||0)+amt2; logName="도파민"; }
+      else if (fieldK === "두쫀쿠" || fieldK === "쿠키") { u2.cookie = (u2.cookie||0)+amt2; logName="두쫀쿠"; }
+      else if (fieldK === "티어리셋" || fieldK === "리셋") { u2.reroll = (u2.reroll||0)+amt2; logName="티어리셋권"; }
+      else if (fieldK === "이동티켓" || fieldK === "티켓") { u2.ticket = (u2.ticket||0)+amt2; logName="이동티켓"; }
+      else { replier.reply("지급 불가 항목입니다."); return; }
+
+      addAdminLog(d, sender, "지급 " + t2.name + " " + logName + " " + amt2);
+      commitSave(true);
+      replier.reply("✅ 지급 완료: " + t2.name + " / " + logName + " +" + amt2);
+      return;
+    }
+
+    if (sub === "설정") { // 기존 설정 기능 (레벨/경험치/골드 직접 세팅)
+       var tn3 = parts[2];
+       var fieldK2 = parts[3];
+       var val2 = parseInt(parts[4], 10);
+       var t3 = getUserByName(d, tn3);
+       if (!t3) { replier.reply("유저 없음"); return; }
+       
+       if (fieldK2 === "레벨") t3.user.trainerLv = val2;
+       else if (fieldK2 === "골드") t3.user.gold = val2;
+       else if (fieldK2 === "경험치") t3.user.trainerExp = val2;
+       else { replier.reply("설정 가능: 레벨/골드/경험치"); return; }
+       
+       commitSave(true);
+       replier.reply("✅ 설정 완료: " + t3.name + " " + fieldK2 + "=" + val2);
+       return;
+    }
+
+    // -------------------- [계정] 이동/초기화 --------------------
+    if (sub === "계정이동" || sub === "닉변") {
+      var oldName = parts[2]; var newName = parts[3];
+      if (!oldName || !newName) { replier.reply("사용법: /관리자 계정이동 [구닉] [신닉]"); return; }
+      
+      if (!d.users[oldName]) { replier.reply("구 닉네임 데이터가 없습니다."); return; }
+      d.users[newName] = JSON.parse(JSON.stringify(d.users[oldName]));
+      delete d.users[oldName];
+      
+      commitSave(true);
+      replier.reply("✅ 계정 이동 완료: " + oldName + " -> " + newName);
+      return;
+    }
+
+    if (sub === "전적초기화") {
+      var target = parts[2];
+      if (target) {
+         var t = getUserByName(d, target);
+         if(t) { resetBattleStats(t.user); replier.reply(t.name + " 전적 초기화 완료"); }
+      } else {
+         var n = resetBattleStatsAll(d);
+         replier.reply("전체 유저(" + n + "명) 전적 초기화 완료");
+      }
+      commitSave(true);
+      return;
+    }
+
+    // -------------------- [포켓몬] 관리/지급/삭제/강화 --------------------
+    if (sub === "포켓몬") {
+       var t = getUserByName(d, parts[2]);
+       if (!t) return;
+       var list = t.user.pokemons || [];
+       var out = t.name + " 포켓몬 (" + list.length + "마리)\n";
+       for(var i=0; i<list.length; i++) {
+          var p = list[i];
+          var db = findPokemonDB(p.pid);
+          var nm = db ? db.name : "PID"+p.pid;
+          if(p.shiny) nm = "✨" + nm;
+          out += "#" + p.uid + " " + nm + " (" + (p.enh||0) + "강)\n";
+       }
+       replier.reply(out);
+       return;
+    }
+
+    if (sub === "포켓몬지급") {
+       var tName = parts[2];
+       var pName = parts[3];
+       var t = getUserByName(d, tName);
+       if (!t) { replier.reply("유저 없음"); return; }
+       
+       var db = isNaN(parseInt(pName)) ? findPokemonDBByName(pName) : findPokemonDB(pName);
+       if (!db) { replier.reply("포켓몬 없음"); return; }
+       
+       var uid = addPokemonToUser(t.user, db.id); // 통합된 함수 사용
+       commitSave(true);
+       replier.reply("✅ 포켓몬 지급 완료: " + t.name + "에게 " + db.name + " (#" + uid + ")");
+       return;
+    }
+
     if (sub === "포켓몬삭제") {
-      var tn5 = parts[2];
-      var uidStr = (parts[3] || "").replace("#", "").trim();
-      var uid = parseInt(uidStr, 10);
-      var t5 = getUserByName(d, tn5);
-      if (!t5) {
-        replier.reply("대상 유저를 찾을 수 없습니다.");
-        return;
-      }
-      if (isNaN(uid)) {
-        replier.reply("사용법: /관리자 포켓몬삭제 닉네임 #포켓몬UID");
-        return;
-      }
-      var arr = t5.user.pokemons || [];
-      var idx = -1;
-      for (var j = 0; j < arr.length; j++) {
-        if (arr[j].uid === uid) {
-          idx = j;
-          break;
-        }
-      }
-      if (idx < 0) {
-        replier.reply("해당 UID의 포켓몬을 찾을 수 없습니다.");
-        return;
-      }
-      var gone = arr[idx];
-      var goneDb = findPokemonDB(gone.pid);
-      var goneName = goneDb ? goneDb.name : ("PID " + gone.pid);
-      arr.splice(idx, 1);
-      addAdminLog(d, sender, "포켓몬삭제 " + t5.name + " #" + uid + " " + goneName);
-      commitSave(true);
-      replier.reply("삭제 완료\n\n" + "대상: " + t5.name + "\n" + "포켓몬: #" + uid + " " + goneName);
-      return;
+       var tName = parts[2];
+       var uid = parseInt((parts[3]||"").replace("#",""), 10);
+       var t = getUserByName(d, tName);
+       if (!t) { replier.reply("유저 없음"); return; }
+       
+       var arr = t.user.pokemons;
+       for(var i=0; i<arr.length; i++) {
+          if (arr[i].uid === uid) {
+             var delName = getDisplayName(arr[i]);
+             arr.splice(i, 1);
+             commitSave(true);
+             replier.reply("🗑️ 삭제 완료: " + t.name + "의 " + delName + " (#" + uid + ")");
+             return;
+          }
+       }
+       replier.reply("해당 UID 포켓몬이 없습니다.");
+       return;
     }
-    replier.reply("알 수 없는 운영자 명령입니다.\n/관리자 도움 을 확인하세요.");
+
+    if (sub === "강화") { // 강제 강화 설정
+       var tName = parts[2];
+       var uid = parseInt(parts[3], 10);
+       var val = parseInt(parts[4], 10);
+       var t = getUserByName(d, tName);
+       if(!t || isNaN(uid) || isNaN(val)) return;
+       
+       var p = findUserPokemonByUid(t.user, uid);
+       if(!p) { replier.reply("포켓몬 없음"); return; }
+       
+       p.enh = val;
+       if(typeof tryAutoEvolveByEnh === "function") tryAutoEvolveByEnh(p);
+       
+       commitSave(true);
+       replier.reply("🛠️ 강화 수치 변경: #" + uid + " -> " + val + "강");
+       return;
+    }
+
+    // -------------------- [스페셜] 이로치 / 잠재력 / 스폰예약 --------------------
+    if (sub === "이로치") {
+       var tName = parts[2];
+       var uid = parseInt(parts[3], 10);
+       var t = getUserByName(d, tName);
+       if(!t) return;
+       var p = findUserPokemonByUid(t.user, uid);
+       if(!p) { replier.reply("포켓몬 없음"); return; }
+       
+       p.shiny = !p.shiny;
+       commitSave(true);
+       replier.reply("✨ 이로치 상태 변경: " + (p.shiny ? "ON" : "OFF"));
+       return;
+    }
+
+    if (sub === "잠재력") {
+       var tName = parts[2];
+       var uid = parseInt(parts[3], 10);
+       var str = parseInt(parts[4]);
+       var hp = parseInt(parts[5]);
+       var spd = parseInt(parts[6]);
+       
+       var t = getUserByName(d, tName);
+       if(!t || isNaN(str)) { replier.reply("/관리자 잠재력 닉네임 UID 힘 체력 민첩"); return; }
+       var p = findUserPokemonByUid(t.user, uid);
+       if(!p) return;
+       
+       p.ivStr = str; p.ivHp = hp; p.ivSpd = spd;
+       // 등급 재계산
+       var score = str + Math.floor(hp/10) + spd;
+       if (score >= 38) p.grade = "S";
+       else if (score >= 28) p.grade = "A";
+       else if (score >= 19) p.grade = "B";
+       else if (score >= 10) p.grade = "C";
+       else p.grade = "D";
+       
+       commitSave(true);
+       replier.reply("💪 잠재력 변경 완료! (등급: " + p.grade + ")");
+       return;
+    }
+
+    if (sub === "스폰" || sub === "스폰예약") {
+       var tName = parts[2];
+       var pName = parts[3];
+       var shinyOpt = parts[4]; // Y or N
+       
+       var t = getUserByName(d, tName);
+       if(!t) return;
+       var db = findPokemonDBByName(pName);
+       if(!db) { replier.reply("포켓몬 없음"); return; }
+       
+       t.user.nextSpawnPid = db.id;
+       t.user.nextSpawnShiny = (shinyOpt === "Y" || shinyOpt === "y");
+       commitSave(true);
+       replier.reply("📍 스폰 예약: " + t.name + " -> " + db.name + (t.user.nextSpawnShiny?"(✨)":""));
+       return;
+    }
+
+    replier.reply("알 수 없는 명령어입니다. /관리자 도움");
     return;
   }
-  if (!d.users) 
-    d.users = {};
-  if (!d.lastSpawnByRoom) 
-    d.lastSpawnByRoom = {};
-  if (!d.regionByRoom) 
-    d.regionByRoom = {};
       // -------------------- [복구 시스템] 아카이브 확인 --------------------
      // -------------------- [복구 시스템] 아카이브 확인 (수정됨) --------------------
   if (!d.users[sender]) {
