@@ -1970,12 +1970,30 @@ function dexCaught(u, pid, grade) {
     u.dex[pid].maxGrade = grade;
   }
 }
+// [최종 수정] UID 생성기 (카운터 방식 폐기 -> MAX 검색 방식 적용)
+// 이제 포획이든 교환이든 무조건 이 함수를 쓰면 중복이 절대 안 생깁니다.
 function nextPokemonUid(u) {
-  if (typeof u.nextPokeUid !== "number") 
-    u.nextPokeUid = 1;
-  var uid = u.nextPokeUid;
-  u.nextPokeUid += 1;
-  return uid;
+  if (!u.pokemons) u.pokemons = [];
+  
+  var max = 0;
+  for (var i = 0; i < u.pokemons.length; i++) {
+    // 안전하게 숫자로 변환해서 비교
+    var p = u.pokemons[i];
+    if (p && p.uid) {
+        var uid = parseInt(p.uid, 10);
+        if (!isNaN(uid) && uid > max) {
+          max = uid;
+        }
+    }
+  }
+  
+  // 무조건 (가장 큰 번호 + 1) 리턴
+  var newUid = max + 1;
+  
+  // 카운터 변수도 혹시 모르니 갱신해둠 (하위 호환성)
+  u.nextPokeUid = newUid + 1; 
+  
+  return newUid;
 }
 function expNeed(lv) {
   var L = Math.max(1, Math.min(MAX_LV, lv));
@@ -2770,21 +2788,7 @@ function globalConfigText(d) {
 function adminHelpText() {
   return ("운영자 명령어\n\n" + "/관리자 도움\n" + "/관리자 조회 닉네임\n" + "/관리자 지급 닉네임 골드 1000\n" + "/관리자 지급 닉네임 경험치 200\n" + "/관리자 지급 닉네임 도파민 3\n" + "/관리자 설정 닉네임 레벨 15\n" + "/관리자 설정 닉네임 강화권 10\n" + "/관리자 포켓몬 닉네임\n" + "/관리자 포켓몬지급 닉네임 포켓몬명\n" + "/관리자 포켓몬삭제 닉네임 #포켓몬UID\n" + "/관리자 전역조회\n" + "/관리자 전역설정 SHOP_PRICE_DOPA 15000\n");
 }
-// 유저 보유 포켓몬 목록을 기준으로 다음 UID 생성
-function nextPokemonUIDForUser(u) {
-  if (!u.pokemons) 
-    u.pokemons = [];
-  var maxUid = 0;
-  for (var i = 0; i < u.pokemons.length; i++) {
-    var p = u.pokemons[i];
-    if (!p) 
-      continue;
-    var uid = parseInt(p.uid, 10);
-    if (!isNaN(uid) && uid > maxUid) 
-      maxUid = uid;
-  }
-  return maxUid + 1;
-}
+
 // -------------------- roomActive: 메모리 전용(파일 저장 X) --------------------
 // 방별 최근 활동 유저(배틀 매칭용) - 앱 재시작 시 리셋됨 (의도된 동작)
 var ROOM_ACTIVE_MEM = {};// { [room]: { [sender]: lastActiveMs } }
@@ -3673,6 +3677,7 @@ if (sub === "강화") {
       replier.reply(out);
       return;
     }
+// [수정됨] 관리자 포켓몬 지급 (통합된 nextPokemonUid 사용)
     if (sub === "포켓몬지급") {
       var tnP = parts[2];
       var pokeKey = parts[3];
@@ -3713,13 +3718,17 @@ if (sub === "강화") {
       var uP = tP.user;
       if (!uP.pokemons) 
         uP.pokemons = [];
-      var newUid = nextPokemonUIDForUser(uP);
+
+      // ★ [핵심 수정] 함수 이름 변경! (nextPokemonUIDForUser -> nextPokemonUid)
+      var newUid = nextPokemonUid(uP); 
+
       // dbp의 id/pid 중 뭐가 실제 번호인지 모호할 수 있어서 안전하게 처리
       var realPid = (typeof dbp.id === "number") ? dbp.id : (typeof dbp.pid === "number" ? dbp.pid : pid);
       var newPoke = {
-  uid: newUid, 
-  pid: realPid, 
-  enh: 0};
+        uid: newUid, 
+        pid: realPid, 
+        enh: 0
+      };
       uP.pokemons.push(newPoke);
       // 도감 기록 처리 (있으면)
       if (typeof dexSeen === "function") {
@@ -5394,7 +5403,7 @@ if (msg.indexOf("/배틀연속") === 0) {
     if (!targetU.pokemons) targetU.pokemons = [];
     
     // 상대방의 다음 UID 번호를 따옵니다. (상대방 가방에서의 고유 번호)
-    var newUid = nextPokemonUIDForUser(targetU); 
+    var newUid = nextPokemonUid(targetU);
     
     // ★ 데이터 복제 (이로치, 등급, IV, 강화수치 완벽 보존)
     // 여기서 tradeP의 데이터를 그대로 가져오되, uid만 새것으로 갈아끼웁니다.
