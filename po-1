@@ -3348,6 +3348,9 @@ function debugBattle(d, sender, room, replier) {
   replier.reply(msgLines.join("\n"));
 }
 
+// 거래 중복 방지용 락
+var TRANSACTION_LOCK = {};
+
 // -------------------- 메인 응답 --------------------
 function response(room, msg, sender, isGroupChat, replier) {
   trackRoomActiveMem(room, sender);
@@ -5249,217 +5252,181 @@ if (msg.indexOf("/배틀연속") === 0) {
   }
 
   
-    // -------------------- [최종] 1:1 포켓몬 교환(선물) 시스템 --------------------
-  if (msg.indexOf("/교환") === 0 || msg.indexOf("/선물") === 0) {
-    var parts = msg.split(" ").filter(Boolean);
-    
-    // 사용법: /교환 [상대닉네임] [포켓몬UID]
-    if (parts.length < 3) {
-      replier.reply("📦 사용법: /교환 [받을사람] [포켓몬UID]\n예: /교환 손사장 15");
-      return;
+// ==================================================================
+  // 💰 [보안 강화] 거래/교환/선물 통합 시스템 (락 적용)
+  // ==================================================================
+
+  // 1. 1:1 포켓몬 교환 (순수 교환 기능만 담당)
+  if (msg.indexOf("/교환") === 0) {
+    if (TRANSACTION_LOCK[sender]) { replier.reply("⏳ 이전 거래를 처리 중입니다. 잠시만 기다려주세요."); return; }
+    TRANSACTION_LOCK[sender] = true; // 🔒 락 걸기
+
+    try {
+      var parts = msg.split(" ").filter(Boolean);
+      if (parts.length < 3) {
+        replier.reply("📦 사용법: /교환 [받을사람] [포켓몬UID]\n예: /교환 손사장 15");
+        delete TRANSACTION_LOCK[sender]; return;
+      }
+
+      var targetName = parts[1].replace("@", "").trim();
+      var uidToSend = parseInt(parts[2], 10);
+
+      if (targetName === sender) { replier.reply("🚫 자기 자신에게는 보낼 수 없습니다."); delete TRANSACTION_LOCK[sender]; return; }
+      if (isNaN(uidToSend)) { replier.reply("🚫 포켓몬 UID가 올바르지 않습니다."); delete TRANSACTION_LOCK[sender]; return; }
+
+      var targetU = d.users[targetName];
+      if (!targetU) { replier.reply("🚫 '" + targetName + "'님을 찾을 수 없습니다."); delete TRANSACTION_LOCK[sender]; return; }
+      
+      normalizeUserData(targetU);
+
+      // 내 포켓몬 확인
+      var myPidx = -1;
+      for (var i = 0; i < u.pokemons.length; i++) {
+        if (u.pokemons[i].uid === uidToSend) { myPidx = i; break; }
+      }
+
+      if (myPidx === -1) { 
+        replier.reply("🚫 해당 UID(#" + uidToSend + ")의 포켓몬이 없습니다."); 
+        delete TRANSACTION_LOCK[sender]; return; 
+      }
+      if (u.pokemons.length <= 1) {
+        replier.reply("🚫 마지막 남은 포켓몬은 보낼 수 없습니다.");
+        delete TRANSACTION_LOCK[sender]; return;
+      }
+
+      var tradeP = u.pokemons[myPidx]; 
+
+      // [핵심] 트랜잭션: 내꺼 삭제 -> 상대 추가
+      u.pokemons.splice(myPidx, 1); // 삭제
+
+      var newUid = nextPokemonUid(targetU);
+      var newPokeObj = JSON.parse(JSON.stringify(tradeP)); // 깊은 복사로 안전하게
+      newPokeObj.uid = newUid;
+      
+      if (!targetU.pokemons) targetU.pokemons = [];
+      targetU.pokemons.push(newPokeObj);
+
+      dexCaught(targetU, tradeP.pid, tradeP.grade || "D");
+      
+      commitSave(true);
+      checkAndNotifyTitles(u, replier);
+
+      var pDisplayName = getDisplayName(newPokeObj);
+      replier.reply("📦 교환 완료!\n" + sender + " ➡️ " + targetName + "\n포켓몬: " + pDisplayName + " (#" + newUid + ")");
+
+    } catch(e) {
+      replier.reply("🚫 교환 중 오류 발생: " + e);
+    } finally {
+      delete TRANSACTION_LOCK[sender]; // 🔓 락 해제
     }
-
-    var targetName = parts[1].replace("@", "").trim();
-    var uidToSend = parseInt(parts[2], 10);
-
-    // 1. 기본 유효성 검사
-    if (targetName === sender) { replier.reply("🚫 자기 자신에게는 보낼 수 없습니다."); return; }
-    if (isNaN(uidToSend)) { replier.reply("🚫 포켓몬 UID가 올바르지 않습니다."); return; }
-
-    var targetU = d.users[targetName];
-    if (!targetU) { replier.reply("🚫 '" + targetName + "'님을 찾을 수 없습니다.\n(회원가입 여부를 확인해주세요)"); return; }
-    
-    // 상대방 데이터 정규화 (에러 방지)
-    normalizeUserData(targetU);
-
-    // 2. 내 포켓몬 찾기
-    var myPidx = -1;
-    for (var i = 0; i < u.pokemons.length; i++) {
-      if (u.pokemons[i].uid === uidToSend) { myPidx = i; break; }
-    }
-
-    if (myPidx === -1) { 
-      replier.reply("🚫 해당 UID(#" + uidToSend + ")의 포켓몬을 가지고 있지 않습니다."); 
-      return; 
-    }
-
-    // ★ [안전장치] 마지막 1마리는 보낼 수 없음
-    if (u.pokemons.length <= 1) {
-      replier.reply("🚫 마지막 남은 포켓몬은 보낼 수 없습니다.\n(최소 1마리는 보유해야 합니다)");
-      return;
-    }
-
-    var tradeP = u.pokemons[myPidx]; // 보낼 포켓몬 데이터 원본
-
-    // 3. [핵심 로직 A] 보내는 사람 가방에서 '완전 삭제'
-    // splice를 쓰면 배열에서 해당 요소가 쏙 빠집니다.
-    u.pokemons.splice(myPidx, 1);
-
-    // 4. [핵심 로직 B] 받는 사람 가방에 '신규 등록'
-    if (!targetU.pokemons) targetU.pokemons = [];
-    
-    // 상대방의 다음 UID 번호를 따옵니다. (상대방 가방에서의 고유 번호)
-    var newUid = nextPokemonUid(targetU);
-    
-    // ★ 데이터 복제 (이로치, 등급, IV, 강화수치 완벽 보존)
-    // 여기서 tradeP의 데이터를 그대로 가져오되, uid만 새것으로 갈아끼웁니다.
-    var newPokeObj = {
-      uid: newUid,
-      pid: tradeP.pid,
-      enh: tradeP.enh || 0,
-      grade: tradeP.grade || "D",
-      ivStr: tradeP.ivStr || 0,
-      ivHp: tradeP.ivHp || 0,
-      ivSpd: tradeP.ivSpd || 0,
-      shiny: !!tradeP.shiny // ★ 이로치 여부 확실하게 복사!
-    };
-    
-    targetU.pokemons.push(newPokeObj);
-
-    // 5. 도감 등록 (받는 사람 도감에 찍어주기)
-    dexCaught(targetU, tradeP.pid, tradeP.grade || "D");
-
-    // 6. 저장 및 알림
-    commitSave(true);
-    checkAndNotifyTitles(u, replier); // 보내면서 칭호 조건이 바뀔 수 있으니 체크
-
-    // 결과 메시지용 이름 가져오기 (이로치면 ✨ 붙음)
-    var pDisplayName = getDisplayName(newPokeObj);
-
-    replier.reply(
-      "📦 교환(선물) 완료!\n━━━━━━━━━━━━━━\n" +
-      "📤 보내는 분: " + sender + "\n" +
-      "📥 받는 분: " + targetName + "\n\n" +
-      "🎁 전달된 포켓몬\n" +
-      pDisplayName + " (" + (tradeP.enh || 0) + "강 / " + (tradeP.grade || "D") + "등급)\n\n" +
-      "✅ 상대방 가방에 새로운 UID(#" + newUid + ")로 안전하게 도착했습니다."
-    );
     return;
   }
-    // -------------------- [신규] 골드 송금 시스템 --------------------
+
+  // 2. 골드 송금 (안전장치 추가)
   if (msg.indexOf("/송금") === 0 || msg.indexOf("/골드보내기") === 0) {
-    var parts = msg.split(" ").filter(Boolean);
-    
-    // 사용법: /송금 [상대닉네임] [금액]
-    if (parts.length < 3) {
-      replier.reply("💸 사용법: /송금 [받을사람] [금액]\n예: /송금 손사장 10000");
-      return;
+    if (TRANSACTION_LOCK[sender]) { return; } // 조용히 무시 (따다닥 방지)
+    TRANSACTION_LOCK[sender] = true;
+
+    try {
+      var parts = msg.split(" ").filter(Boolean);
+      if (parts.length < 3) {
+        replier.reply("💸 사용법: /송금 [받을사람] [금액]\n예: /송금 손사장 10000");
+        delete TRANSACTION_LOCK[sender]; return;
+      }
+
+      var targetName = parts[1].replace("@", "").trim();
+      var amount = parseInt(parts[2], 10);
+
+      if (targetName === sender) { replier.reply("🚫 자기 자신에게는 보낼 수 없습니다."); delete TRANSACTION_LOCK[sender]; return; }
+      if (isNaN(amount) || amount <= 0) { replier.reply("🚫 1원 이상 입력해주세요."); delete TRANSACTION_LOCK[sender]; return; }
+
+      var targetU = d.users[targetName];
+      if (!targetU) { replier.reply("🚫 '" + targetName + "'님을 찾을 수 없습니다."); delete TRANSACTION_LOCK[sender]; return; }
+      
+      normalizeUserData(targetU);
+
+      if (u.gold < amount) {
+        replier.reply("🚫 잔액이 부족합니다.\n보유: " + fmtNum(u.gold) + "💰");
+        delete TRANSACTION_LOCK[sender]; return;
+      }
+
+      // [핵심] 선 차감 후 지급 (순서 중요)
+      u.gold -= amount;
+      targetU.gold += amount;
+
+      commitSave(true);
+      checkAndNotifyTitles(u, replier);
+
+      replier.reply("💸 송금 성공!\n" + sender + " ➡️ " + targetName + "\n금액: " + fmtNum(amount) + "💰\n남은 돈: " + fmtNum(u.gold) + "💰");
+
+    } catch(e) {
+      replier.reply("🚫 송금 오류: " + e);
+    } finally {
+      delete TRANSACTION_LOCK[sender];
     }
-
-    var targetName = parts[1].replace("@", "").trim();
-    var amount = parseInt(parts[2], 10);
-
-    // 1. 유효성 검사
-    if (targetName === sender) { replier.reply("🚫 자기 자신에게는 보낼 수 없습니다."); return; }
-    if (isNaN(amount) || amount <= 0) { replier.reply("🚫 보낼 금액은 1원 이상이어야 합니다."); return; }
-
-    var targetU = d.users[targetName];
-    if (!targetU) { replier.reply("🚫 '" + targetName + "'님을 찾을 수 없습니다.\n(회원가입 여부를 확인해주세요)"); return; }
-    
-    // 상대방 데이터 정규화 (혹시 골드 필드가 없으면 생성)
-    normalizeUserData(targetU);
-
-    // 2. 잔액 체크
-    if (u.gold < amount) {
-      replier.reply("🚫 잔액이 부족합니다.\n보유 골드: " + fmtNum(u.gold) + "💰\n보내려는 금액: " + fmtNum(amount) + "💰");
-      return;
-    }
-
-    // 3. [핵심 로직] 송금 실행
-    u.gold -= amount;       // 내 돈 차감
-    targetU.gold += amount; // 상대 돈 추가
-
-    // 4. 저장 및 알림
-    commitSave(true);
-    
-    // 칭호 체크 (혹시 돈이 줄어서 칭호 조건이 바뀌거나, 상대방이 부자가 되었을 수 있으니)
-    // 실시간성을 위해 내 칭호만 체크하거나 생략해도 무방하지만, 일단 넣습니다.
-    checkAndNotifyTitles(u, replier); 
-
-    replier.reply(
-      "💸 송금 성공!\n━━━━━━━━━━━━━━\n" +
-      "📤 보낸 분: " + sender + "\n" +
-      "📥 받은 분: " + targetName + "\n" +
-      "💰 금액: " + fmtNum(amount) + "💰\n\n" +
-      "💳 " + sender + "님의 남은 잔액: " + fmtNum(u.gold) + "💰"
-    );
     return;
   }
-  
-    // -------------------- [신규] 아이템 선물 시스템 --------------------
+
+  // 3. 아이템 선물 (교환 명령어에서 분리됨)
   if (msg.indexOf("/선물") === 0) {
-    var parts = msg.split(" ").filter(Boolean);
-    
-    // 사용법: /선물 [상대닉네임] [아이템명] [수량]
-    if (parts.length < 4) {
-      replier.reply(
-        "🎁 사용법: /선물 [받을사람] [아이템] [수량]\n" +
-        "예: /선물 손사장 두쫀쿠 1\n\n" +
-        "[선물 가능 목록]\n" +
-        "- 도파민, 두쫀쿠, 티어리셋, 이동티켓, 킹갓볼"
-      );
-      return;
+    if (TRANSACTION_LOCK[sender]) { return; }
+    TRANSACTION_LOCK[sender] = true;
+
+    try {
+      var parts = msg.split(" ").filter(Boolean);
+      if (parts.length < 4) {
+        replier.reply("🎁 사용법: /선물 [받을사람] [아이템] [수량]\n예: /선물 손사장 두쫀쿠 1");
+        delete TRANSACTION_LOCK[sender]; return;
+      }
+
+      var targetName = parts[1].replace("@", "").trim();
+      var itemName = parts[2];
+      var qty = parseInt(parts[3], 10);
+
+      if (targetName === sender) { replier.reply("🚫 본인에게 선물 불가."); delete TRANSACTION_LOCK[sender]; return; }
+      if (isNaN(qty) || qty <= 0) { replier.reply("🚫 1개 이상 보내세요."); delete TRANSACTION_LOCK[sender]; return; }
+
+      var targetU = d.users[targetName];
+      if (!targetU) { replier.reply("🚫 대상을 찾을 수 없습니다."); delete TRANSACTION_LOCK[sender]; return; }
+      
+      normalizeUserData(targetU);
+
+      // 아이템 매핑
+      var field = "";
+      var label = "";
+      if (itemName === "도파민" || itemName === "도파민강화권") { field = "dopaTicket"; label = "도파민강화권"; }
+      else if (itemName === "두쫀쿠" || itemName === "쿠키") { field = "cookie"; label = "두쫀쿠"; }
+      else if (itemName === "티어리셋" || itemName === "티어리셋권") { field = "reroll"; label = "티어리셋권"; }
+      else if (itemName === "이동티켓" || itemName === "티켓") { field = "ticket"; label = "이동티켓"; }
+      else if (itemName.indexOf("킹갓볼") !== -1) { field = "godBall"; label = "킹갓볼"; }
+      else {
+        replier.reply("🚫 선물 불가 아이템입니다.\n(가능: 도파민, 두쫀쿠, 티어리셋, 이동티켓, 킹갓볼)");
+        delete TRANSACTION_LOCK[sender]; return;
+      }
+
+      var myQty = u[field] || 0;
+      if (myQty < qty) {
+        replier.reply("🚫 수량이 부족합니다.\n보유: " + fmtNum(myQty) + "개");
+        delete TRANSACTION_LOCK[sender]; return;
+      }
+
+      // [핵심] 차감 및 지급
+      u[field] -= qty;
+      if (typeof targetU[field] !== "number") targetU[field] = 0;
+      targetU[field] += qty;
+
+      commitSave(true);
+      checkAndNotifyTitles(u, replier);
+
+      replier.reply("🎁 선물 배송 완료!\n" + sender + " ➡️ " + targetName + "\n내용물: " + label + " " + qty + "개");
+
+    } catch(e) {
+      replier.reply("🚫 선물 오류: " + e);
+    } finally {
+      delete TRANSACTION_LOCK[sender];
     }
-
-    var targetName = parts[1].replace("@", "").trim();
-    var itemName = parts[2];
-    var qty = parseInt(parts[3], 10);
-
-    // 1. 유효성 검사
-    if (targetName === sender) { replier.reply("🚫 자기 자신에게는 선물할 수 없습니다."); return; }
-    if (isNaN(qty) || qty <= 0) { replier.reply("🚫 수량은 1개 이상이어야 합니다."); return; }
-
-    var targetU = d.users[targetName];
-    if (!targetU) { replier.reply("🚫 '" + targetName + "'님을 찾을 수 없습니다."); return; }
-    
-    normalizeUserData(targetU);
-
-    // 2. 아이템 이름 매핑 (한글명 -> DB변수명)
-    var field = "";
-    var label = "";
-
-    if (itemName === "도파민" || itemName === "도파민강화권" || itemName === "강화권") {
-      field = "dopaTicket"; label = "도파민강화권";
-    } else if (itemName === "두쫀쿠" || itemName === "쿠키") {
-      field = "cookie"; label = "두쫀쿠";
-    } else if (itemName === "티어리셋" || itemName === "티어리셋권" || itemName === "리셋" || itemName === "티어") {
-      field = "reroll"; label = "티어리셋권";
-    } else if (itemName === "이동티켓" || itemName === "티켓" || itemName === "이동") {
-      field = "ticket"; label = "이동티켓";
-    } else if (itemName.indexOf("킹갓볼") !== -1 || itemName.indexOf("랄부볼") !== -1) {
-      field = "godBall"; label = "슈퍼울트라(생략)킹갓볼";
-    } else {
-      replier.reply("🚫 선물할 수 없는 아이템이거나 이름을 잘못 입력했습니다.\n(몬스터볼 종류는 선물 불가)");
-      return;
-    }
-
-    // 3. 수량 체크
-    var myQty = u[field] || 0;
-    if (myQty < qty) {
-      replier.reply("🚫 보유 수량이 부족합니다.\n현재 " + label + ": " + fmtNum(myQty) + "개");
-      return;
-    }
-
-    // 4. 전송 실행
-    u[field] -= qty;
-    
-    if (typeof targetU[field] !== "number") targetU[field] = 0;
-    targetU[field] += qty;
-
-    // 5. 저장 및 알림
-    commitSave(true);
-    checkAndNotifyTitles(u, replier); // 기부천사 같은 칭호가 있다면 여기서 체크 가능
-
-    replier.reply(
-      "🎁 선물 보내기 성공!\n━━━━━━━━━━━━━━\n" +
-      "📤 보내는 분: " + sender + "\n" +
-      "📥 받는 분: " + targetName + "\n\n" +
-      "📦 내용물: " + label + " " + qty + "개\n" +
-      "✅ 안전하게 배송되었습니다."
-    );
     return;
   }
-  
   
 }
 //respone함수 닫음
