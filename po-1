@@ -1673,27 +1673,20 @@ function battleOppPickLine(oppName, oppUid, db, p) { // enh 대신 p 객체 받�
   return oppName + "의 포켓몬: #" + oppUid + " " + pName + (e ? (" " + e) : "");
 }
 
-// ✅ 배틀 참가 가능 포켓몬 필터 (필수)
+// [수정됨] 배틀 참가 가능 포켓몬 (탐험 중인 녀석 제외)
 function getBattleEligiblePokemons(u) {
   if (!u) return [];
-
-  // u.pokemons 형태가 배열/객체 둘 다일 수 있어서 안전 처리
   var p = u.pokemons;
   if (!p) return [];
-
-  var arr = [];
-  if (Array.isArray(p)) {
-    arr = p;
-  } else if (typeof p === "object") {
-    for (var k in p) {
-      if (p.hasOwnProperty(k)) arr.push(p[k]);
-    }
-  }
-
+  
   var out = [];
-  for (var i = 0; i < arr.length; i++) {
-    var pp = arr[i];
+  for (var i = 0; i < p.length; i++) {
+    var pp = p[i];
     if (!pp) continue;
+    
+    // ★ [추가] 탐험 중이면 배틀 명단에서 제외
+    if (isPokemonBusy(u, pp.uid)) continue; 
+
     if ((pp.enh || 0) >= BATTLE_MIN_ENH) out.push(pp);
   }
   return out;
@@ -1883,6 +1876,19 @@ function cooldownRemainMsg(sender, lastAt, cooldownMs, actionName) {
     remainMs = 0;
   var sec = Math.ceil(remainMs / 1000);
   return sender + "님, " + sec + "초 후 다시 " + actionName + "할 수 있습니다.";
+}
+// -------------------- [신규] 탐험 상태 확인 유틸 --------------------
+var EXPLORE_TIME_MS = 60 * 60 * 1000; // 1시간 (테스트할 땐 1000 * 10 으로 10초만 해보세요)
+
+function isPokemonBusy(u, uid) {
+  if (!u.exploration) return false; // 탐험 정보 없으면 안 바쁨
+  if (u.exploration.uid === uid) return true; // 탐험 간 놈임
+  return false;
+}
+
+function getExploringPokemon(u) {
+  if (!u.exploration) return null;
+  return findUserPokemonByUid(u, u.exploration.uid);
 }
 // -------------------- 랜덤 멘트 세트 --------------------
 function pick(arr) {
@@ -3897,7 +3903,11 @@ var decoName = getDecoratedName(u, sender);
       
       var p = findUserPokemonByUid(u, uid);
       if (!p) { replier.reply("해당 포켓몬을 찾을 수 없습니다."); return; }
-      
+
+      if (isPokemonBusy(u, p.uid)) {
+        replier.reply("🚫 해당 포켓몬은 현재 탐험 중입니다.\n돌아올 때까지 기다려주세요.");
+        return;
+    }
       // [수정] 30 -> ENHANCE_MAX (100)
       if (p.enh >= ENHANCE_MAX) { replier.reply("이미 최대 강화(" + ENHANCE_MAX + "강) 상태입니다."); return; }
 
@@ -3967,6 +3977,11 @@ var decoName = getDecoratedName(u, sender);
 
       var p = findUserPokemonByUid(u, uid);
       if (!p) { replier.reply("해당 포켓몬을 찾을 수 없습니다."); return; }
+
+if (isPokemonBusy(u, p.uid)) {
+        replier.reply("🚫 해당 포켓몬은 현재 탐험 중입니다.\n돌아올 때까지 기다려주세요.");
+        return;
+    }
 
       u.reroll--;
       
@@ -4095,7 +4110,7 @@ var decoName = getDecoratedName(u, sender);
     return;
   }
 
-// -------------------- /판매 하위 N --------------------
+// -------------------- /판매 하위 N (탐험 보호 적용) --------------------
 if (msg.indexOf("/판매 하위") === 0) {
   var sp = msg.split(" ").filter(Boolean);
   var n = parseInt(sp[2], 10);
@@ -4110,23 +4125,34 @@ if (msg.indexOf("/판매 하위") === 0) {
     return;
   }
 
-  var sorted = sortPokemonsByPower(u.pokemons); // 높은 순
-  var maxSell = Math.min(n, sorted.length - 1);
-  var targets = sorted.slice(sorted.length - maxSell); // 낮은 애들
+  var sorted = sortPokemonsByPower(u.pokemons); // 높은 순 정렬
+  var maxSell = Math.min(n, sorted.length - 1); // 최소 1마리는 남김
+  var targets = sorted.slice(sorted.length - maxSell); // 뒤에서부터 n마리 (낮은 순)
 
   var totalGold = 0;
   var soldLines = [];
+  var skippedCount = 0; // 탐험 중이라 못 판 마릿수
 
   for (var i = u.pokemons.length - 1; i >= 0; i--) {
     var p = u.pokemons[i];
 
     for (var j = 0; j < targets.length; j++) {
       if (p.uid === targets[j].uid) {
+        
+        // ★ [핵심 추가] 탐험 중인 포켓몬은 판매 스킵!
+        if (isPokemonBusy(u, p.uid)) {
+            skippedCount++;
+            break; // 판매 안 하고 넘어감
+        }
+
         var db = findPokemonDB(p.pid);
         var name = db ? db.name : "포켓몬";
+        // ★ 이로치 이름 적용
+        if (p.shiny) name = "✨" + name;
+        
         var price = sellPrice(p.pid, p.enh, p.grade); 
 
-        u.pokemons.splice(i, 1);
+        u.pokemons.splice(i, 1); // 가방에서 삭제
         totalGold += price;
 
         soldLines.push("#" + p.uid + " " + name + " " + (p.enh || 0) + "강 (+" + fmtNum(price) + "💰)");
@@ -4138,12 +4164,18 @@ if (msg.indexOf("/판매 하위") === 0) {
   u.gold += totalGold;
   commitSave(true);
   checkAndNotifyTitles(u, replier);
-  replier.reply(
-    sayDo(decoName, "하위 포켓몬 판매가 완료되었습니다.") +
+
+  var resultMsg = sayDo(decoName, "하위 포켓몬 판매가 완료되었습니다.") +
     "\n\n🧾 판매 내역\n" + soldLines.join("\n") +
     "\n\n💰 총 획득 골드: +" + fmtNum(totalGold) + "💰" +
-    "\n💰 잔여 골드: " + fmtNum(u.gold) + "💰"
-  );
+    "\n💰 잔여 골드: " + fmtNum(u.gold) + "💰";
+
+  // 탐험 중이라 못 판 애가 있으면 알려줌
+  if (skippedCount > 0) {
+      resultMsg += "\n\n⚠️ 탐험 중인 " + skippedCount + "마리는 판매되지 않았습니다.";
+  }
+
+  replier.reply(resultMsg);
   return;
 }
 // -------------------- /판매 (단일/다중 UID) --------------------
@@ -4187,6 +4219,11 @@ if (msg.indexOf("/판매") === 0) {
   for (var si = u.pokemons.length - 1; si >= 0; si--) {
     var pSell = u.pokemons[si];
     if (uidList.indexOf(pSell.uid) === -1) continue;
+
+    if (isPokemonBusy(u, pSell.uid)) {
+        blockedLines.push("#" + pSell.uid + "(탐험중)");
+        continue;
+    }
 
     foundMap[pSell.uid] = true;
 
@@ -4761,109 +4798,145 @@ function handleCatch(ballType, ballName, decoName, replier) {
     return;
   }
 
-   // -------------------- [수정] 탐험 시스템 (안내 문구 보강) --------------------
-  if (msg === "/탐험") {
-    var now2 = nowMs();
-    if (now2 - u.lastExploreAt < EXPLORE_COOLDOWN_MS) {
-      var remain = EXPLORE_COOLDOWN_MS - (now2 - u.lastExploreAt);
-      var sec = Math.ceil(remain / 1000);
-      replier.reply(sayDo(decoName, pick(COOLDOWN_LINES)) + "\n⏳ " + sec + "초 후 다시 탐험할 수 있어요.");
+// -------------------- [대규모 개편] 선택형 대모험 시스템 --------------------
+  if (msg.indexOf("/탐험") === 0) {
+    var now = nowMs();
+    var EXPLORE_TIME_MS = 60 * 60 * 1000; // 1시간
+    // var EXPLORE_TIME_MS = 10 * 1000; // (테스트용 10초)
+
+    // A. 탐험 복귀 및 결과 확인
+    if (u.exploration) {
+      var diff = u.exploration.endAt - now;
+      var pEx = findUserPokemonByUid(u, u.exploration.uid);
+      var pName = pEx ? getDisplayName(pEx) : "알 수 없는 포켓몬";
+
+      // 아직 시간 안 됨
+      if (diff > 0) {
+        var min = Math.floor(diff / 60000);
+        var sec = Math.floor((diff % 60000) / 1000);
+        replier.reply(
+          "🧭 " + pName + "이(가) 대모험을 떠난 상태입니다.\n" +
+          "현재 [" + u.exploration.routes[Math.floor(Math.random()*u.exploration.routes.length)] + "] 주변을 지나는 중...\n\n" +
+          "⏳ 남은 시간: " + min + "분 " + sec + "초\n" +
+          "⚠️ 탐험 중에는 해당 포켓몬을 사용할 수 없습니다."
+        );
+        return;
+      }
+
+      // ★ [보상 정산] 1시간치 '대박' 보상
+      // 기본 골드: 50,000 ~ 150,000 (직접 뛸 때의 약 40~50배 효율)
+      var baseGold = randInt(50000, 150000); 
+      var baseExp = randInt(15000, 30000);   // 경험치 대폭 상향
+      
+      // 레벨/강화 보너스 (강한 포켓몬을 보낼수록 보상 UP)
+      var pEnh = pEx ? (pEx.enh || 0) : 0;
+      var bonusMult = 1 + (u.trainerLv * 0.05) + (pEnh * 0.05); // 60강이면 3배+
+      
+      var finalGold = Math.floor(baseGold * bonusMult);
+      var finalExp = Math.floor(baseExp * bonusMult);
+
+      // 아이템 드랍 (여러 개 물어옴)
+      var itemLog = "";
+      var lootCount = randInt(3, 7); // 3~7개의 아이템을 주워옴
+      
+      for(var i=0; i<lootCount; i++) {
+          var rnd = Math.random();
+          if (rnd < 0.02) { u.godBall++; itemLog += "👑 킹갓볼 +1 (초대박!)\n"; }
+          else if (rnd < 0.15) { u.reroll++; itemLog += "🔄 티어리셋권 +1\n"; }
+          else if (rnd < 0.30) { u.cookie++; itemLog += "🍪 두쫀쿠 +1\n"; }
+          else if (rnd < 0.50) { u.dopaTicket++; itemLog += "💳 도파민강화권 +1\n"; }
+          else if (rnd < 0.70) { u.ticket++; itemLog += "🎫 이동티켓 +1\n"; }
+          else { 
+              // 꽝 대신 볼이라도 줌
+              var ballAmt = randInt(5, 10);
+              u.ball += ballAmt; itemLog += "🔴 몬스터볼 +" + ballAmt + "\n";
+          }
+      }
+
+      // 데이터 반영
+      u.gold += finalGold;
+      addExpWithLevelUpMsg(u, finalExp);
+      
+      // 여정 로그 만들기 (다녀온 곳들)
+      var routeStr = u.exploration.routes.join(" ➔ ");
+
+      delete u.exploration; 
+      commitSave(true);
+      checkAndNotifyTitles(u, replier);
+
+      replier.reply(
+        "🎉 " + pName + " 탐험 복귀!\n" +
+        "━━━━━━━━━━━━━━\n" +
+        "🗺️ 다녀온 경로:\n" + routeStr + "\n\n" +
+        "💼 가져온 전리품:\n" +
+        "💰 골드: +" + fmtNum(finalGold) + "💰\n" +
+        "✨ 경험치: +" + fmtNum(finalExp) + "EXP\n" +
+        "📦 아이템:\n" + itemLog +
+        "━━━━━━━━━━━━━━\n" +
+        "수고했어! 푹 쉬렴."
+      );
       return;
     }
-    u.lastExploreAt = now2;
 
-    var region2;
-    if (Math.random() < 0.005) { region2 = "냥치의 방"; } 
-    else { 
-      region2 = getRoomRegion(d, room); 
-      while(region2 === "냥치의 방") region2 = getRoomRegion(d, room); 
+    // B. 새로운 탐험 시작 (포켓몬 지정 필수)
+    var parts = msg.split(" ").filter(Boolean);
+    var targetUid = parseInt(parts[1], 10);
+
+    if (isNaN(targetUid)) {
+      replier.reply(
+        "🎒 누구를 탐험 보낼까요?\n" +
+        "사용법: /탐험 [포켓몬UID]\n" +
+        "예: /탐험 15\n\n" +
+        "💡 1시간 동안 떠나며, 강한 포켓몬일수록 더 많은 보상을 가져옵니다!"
+      );
+      return;
+    }
+
+    var pStart = findUserPokemonByUid(u, targetUid);
+    if (!pStart) {
+      replier.reply("해당 UID의 포켓몬을 찾을 수 없습니다.");
+      return;
+    }
+
+    // 이름 가져오기
+    var pNameStart = getDisplayName(pStart);
+
+    // 경로 생성 (랜덤 3~5개 지역)
+    var routeCount = randInt(3, 5);
+    var routes = [];
+    var possibleRegions = [];
+    for(var k=0; k<REGIONS.length; k++) {
+        if (REGIONS[k].key !== "냥치의 방") possibleRegions.push(REGIONS[k].key);
     }
     
-    var gainGold = calcExploreGold(u);
-    var gainExp = calcExploreExp();
-    var extraLog = "";
-
-    var normalItemPool = [
-      { name: "몬스터볼", field: "ball", amt: 1 },
-      { name: "슈퍼볼", field: "superBall", amt: 1 },
-      { name: "하이퍼볼", field: "ultraBall", amt: 1 }
-    ];
-
-    var nyangchiPool = [
-      { name: "몬스터볼", field: "ball", min: 10, max: 100 },
-      { name: "슈퍼볼", field: "superBall", min: 5, max: 70 },
-      { name: "하이퍼볼", field: "ultraBall", min: 3, max: 50 },
-      { name: "도파민 강화권", field: "dopaTicket", min: 1, max: 3 },
-      { name: "두쫀쿠", field: "cookie", min: 1, max: 5 },
-      { name: "티어리셋권", field: "reroll", min: 1, max: 5 },
-      { name: "이동티켓", field: "ticket", min: 1, max: 10 },
-      { name: "슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커평범한용태는미친사람갓민수랄부볼", field: "godBall", min: 1, max: 1 }
-    ];
-
-    // [로직] 아이템 및 포켓몬 획득 여부 체크
-    var hasItem = false;
-    var hasPokemon = false;
-
-    if (region2 === "냥치의 방") {
-      var goldBonus = randInt(500000, 10000000); 
-      gainGold += goldBonus;
-      extraLog = "🐱 【냥치의 방 발견!】\n냥치의 비밀 금고를 털었습니다!\n💰 보너스: +" + fmtNum(goldBonus) + "💰\n\n";
-
-      var dropCount = randInt(1, 2); 
-      for(var k=0; k<dropCount; k++) {
-        var picked = randomPick(nyangchiPool);
-        if(picked.field === "godBall" && Math.random() > 0.01) { picked = nyangchiPool[0]; }
-        var amt = randInt(picked.min, (picked.max || picked.min));
-        if (typeof u[picked.field] !== "number") u[picked.field] = 0;
-        u[picked.field] += amt;
-        extraLog += "🎁 득템: " + picked.name + " " + amt + "개!\n";
-      }
-      hasItem = true;
-    } else {
-      if (Math.random() < 0.08) {
-        var pickedN = randomPick(normalItemPool);
-        u[pickedN.field] = (u[pickedN.field] || 0) + pickedN.amt;
-        extraLog = "🎁 아이템 발견: " + pickedN.name + " " + pickedN.amt + "개!\n";
-        hasItem = true;
-      }
+    for(var r=0; r<routeCount; r++) {
+        routes.push(randomPick(possibleRegions));
     }
+    // 마지막엔 10% 확률로 냥치의 방 들름
+    if (Math.random() < 0.1) routes.push("냥치의 방");
 
-    var pokeChance = getExplorePokemonChance(u.trainerLv);
-    var pokeLog = "";
-    if (Math.random() < pokeChance) {
-      var found = spawnPokemonForRegion(region2);
-      dexSeen(u, found.id);
-      var uid2 = addPokemonToUser(u, found.id);
-      pokeLog = "🐾 야생 포켓몬 발견: " + found.name + " (#" + uid2 + ")\n";
-      hasPokemon = true;
-    }
+    // 탐험 데이터 저장
+    u.exploration = {
+      uid: pStart.uid,
+      routes: routes, // 경로 저장
+      startAt: now,
+      endAt: now + EXPLORE_TIME_MS
+    };
 
-    // 결과 로그 정리
-    var finalResult = "";
-    if (!hasItem && !hasPokemon) {
-      finalResult = "💨 아쉽게도 이번 탐험에선 아무것도 발견하지 못했습니다.\n";
-    } else {
-      finalResult = (extraLog + pokeLog);
-    }
-
-    u.gold += gainGold;
-    addExpWithLevelUpMsg(u, gainExp);
     commitSave(true);
-    checkAndNotifyTitles(u, replier);
     
     replier.reply(
-      "🧭 " + sayDo(decoName, "탐험 결과") + "\n" +
+      "🎒 " + pNameStart + "이(가) 대모험을 떠납니다!\n" +
       "━━━━━━━━━━━━━━\n" +
-      "📍 지역: " + region2 + "\n" +
-      "💰 보상: +" + fmtNum(gainGold) + "💰 / +" + gainExp + "EXP\n" +
+      "📅 예정 경로: " + routes[0] + " 외 " + (routes.length-1) + "곳\n" +
+      "⏳ 소요 시간: 1시간\n" +
+      "💪 전투력 보너스: 적용됨\n" +
       "━━━━━━━━━━━━━━\n" +
-      finalResult
+      "👋 \"다녀오겠습니다! 건강히 돌아올게요!\"\n" +
+      "(탐험 중에는 해당 포켓몬을 사용할 수 없습니다.)"
     );
     return;
   }
- 
-
-
   
   if (msg === "/전적") {
     ensureUserStats(u);
@@ -4896,6 +4969,11 @@ function handleCatch(ballType, ballName, decoName, replier) {
 
     var p = findUserPokemonByUid(u, uidEnh);
     if (!p) { replier.reply("해당 포켓몬을 찾을 수 없습니다."); return; }
+
+if (isPokemonBusy(u, p.uid)) {
+        replier.reply("🚫 해당 포켓몬은 현재 탐험 중입니다.\n돌아올 때까지 기다려주세요.");
+        return;
+    }
 
     if (p.enh >= ENHANCE_MAX) {
       replier.reply("이미 최대 강화 단계(" + ENHANCE_MAX + "강)입니다.");
@@ -4979,6 +5057,10 @@ function handleCatch(ballType, ballName, decoName, replier) {
     var pD = findUserPokemonByUid(u, uidD);
     if (!pD) { replier.reply("해당 포켓몬을 찾을 수 없습니다."); return; }
 
+if (isPokemonBusy(u, p.uid)) {
+        replier.reply("🚫 해당 포켓몬은 현재 탐험 중입니다.\n돌아올 때까지 기다려주세요.");
+        return;
+    }
     if (pD.enh >= ENHANCE_MAX) {
       replier.reply("이미 최대 강화 단계(" + ENHANCE_MAX + "강)입니다.");
       return;
@@ -5295,6 +5377,11 @@ if (msg.indexOf("/배틀연속") === 0) {
       }
 
       var tradeP = u.pokemons[myPidx]; 
+
+if (isPokemonBusy(u, tradeP.uid)) {
+          replier.reply("🚫 탐험을 떠난 포켓몬은 교환할 수 없습니다.");
+          delete TRANSACTION_LOCK[sender]; return;
+      }
 
       // [핵심] 트랜잭션: 내꺼 삭제 -> 상대 추가
       u.pokemons.splice(myPidx, 1); // 삭제
