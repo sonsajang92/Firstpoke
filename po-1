@@ -1519,15 +1519,22 @@ function runSingleBattle(d, room, sender, u, myPickUid, opt) {
     return { ok: false, msg: "배틀 참가 조건: " + BATTLE_MIN_ENH + "강 이상 포켓몬이 필요합니다." };
   }
 
-  var myP = null;
+    var myP = null;
   if (myPickUid != null) {
     myP = findUserPokemonByUid(u, myPickUid);
+    
+    // ★ [추가] 직접 지목한 포켓몬이 탐험 중인지 여기서도 체크!
+    if (isPokemonBusy(u, myPickUid)) {
+        return { ok: false, msg: "🚫 해당 포켓몬은 탐험 중이라 배틀에 나갈 수 없습니다." };
+    }
+
     if (!myP || (myP.enh || 0) < BATTLE_MIN_ENH) {
       return { ok: false, msg: "해당 포켓몬은 배틀에 참가할 수 없습니다. (최소 " + BATTLE_MIN_ENH + "강 필요)" };
     }
   } else {
     myP = randomPick(myEligible);
   }
+  
 
   // 2. 레벨 캡 필터링 (±10강)
   var oppList = getEligibleOpponentsMem(d, room, sender, myP.enh);
@@ -1878,7 +1885,7 @@ function cooldownRemainMsg(sender, lastAt, cooldownMs, actionName) {
   return sender + "님, " + sec + "초 후 다시 " + actionName + "할 수 있습니다.";
 }
 // -------------------- [신규] 탐험 상태 확인 유틸 --------------------
-var EXPLORE_TIME_MS = 60 * 60 * 1000; // 1시간 (테스트할 땐 1000 * 10 으로 10초만 해보세요)
+var EXPLORE_TIME_MS = 10 * 1000; // 1시간 (테스트할 땐 1000 * 10 으로 10초만 해보세요) 60 * 60 * 1000;
 
 function isPokemonBusy(u, uid) {
   if (!u.exploration) return false; // 탐험 정보 없으면 안 바쁨
@@ -4798,12 +4805,34 @@ function handleCatch(ballType, ballName, decoName, replier) {
     return;
   }
 
+    // -------------------- [신규] 탐험 취소 (보상 없음, 즉시 복귀) --------------------
+  if (msg === "/탐험취소") {
+    // 1. 탐험 중인지 확인
+    if (!u.exploration) {
+      replier.reply("현재 탐험 중인 포켓몬이 없습니다.");
+      return;
+    }
+
+    var pEx = findUserPokemonByUid(u, u.exploration.uid);
+    var pName = pEx ? getDisplayName(pEx) : "알 수 없는 포켓몬";
+
+    // 2. 묻지도 따지지도 않고 데이터 삭제 (취소)
+    delete u.exploration; 
+    
+    commitSave(true); // 즉시 저장
+
+    replier.reply(
+      "↩️ 탐험을 취소하고 긴급 복귀 명령을 내렸습니다.\n\n" +
+      "🏃 " + pName + "이(가) 빈손으로 헐레벌떡 돌아왔습니다.\n" +
+      "⚠️ 중도 포기로 인해 아무런 보상도 획득하지 못했습니다."
+    );
+    return;
+  }
+  
 // -------------------- [대규모 개편] 선택형 대모험 시스템 --------------------
   if (msg.indexOf("/탐험") === 0) {
     var now = nowMs();
-    var EXPLORE_TIME_MS = 60 * 60 * 1000; // 1시간
-    // var EXPLORE_TIME_MS = 10 * 1000; // (테스트용 10초)
-
+    
     // A. 탐험 복귀 및 결과 확인
     if (u.exploration) {
       var diff = u.exploration.endAt - now;
@@ -4826,7 +4855,7 @@ function handleCatch(ballType, ballName, decoName, replier) {
       // ★ [보상 정산] 1시간치 '대박' 보상
       // 기본 골드: 50,000 ~ 150,000 (직접 뛸 때의 약 40~50배 효율)
       var baseGold = randInt(50000, 150000); 
-      var baseExp = randInt(15000, 30000);   // 경험치 대폭 상향
+      var baseExp = randInt(10000, 20000);   // 경험치 대폭 상향
       
       // 레벨/강화 보너스 (강한 포켓몬을 보낼수록 보상 UP)
       var pEnh = pEx ? (pEx.enh || 0) : 0;
@@ -4837,12 +4866,12 @@ function handleCatch(ballType, ballName, decoName, replier) {
 
       // 아이템 드랍 (여러 개 물어옴)
       var itemLog = "";
-      var lootCount = randInt(3, 7); // 3~7개의 아이템을 주워옴
+      var lootCount = randInt(3, 10); // 3~7개의 아이템을 주워옴
       
       for(var i=0; i<lootCount; i++) {
           var rnd = Math.random();
-          if (rnd < 0.02) { u.godBall++; itemLog += "👑 킹갓볼 +1 (초대박!)\n"; }
-          else if (rnd < 0.15) { u.reroll++; itemLog += "🔄 티어리셋권 +1\n"; }
+          if (rnd < 0.005) { u.godBall++; itemLog += "👑 킹갓볼 +1 (초대박!)\n"; }
+          else if (rnd < 0.18) { u.reroll++; itemLog += "🔄 티어리셋권 +1\n"; }
           else if (rnd < 0.30) { u.cookie++; itemLog += "🍪 두쫀쿠 +1\n"; }
           else if (rnd < 0.50) { u.dopaTicket++; itemLog += "💳 도파민강화권 +1\n"; }
           else if (rnd < 0.70) { u.ticket++; itemLog += "🎫 이동티켓 +1\n"; }
@@ -5046,7 +5075,7 @@ if (isPokemonBusy(u, p.uid)) {
     replier.reply(r.msg);
     return;
   }
-  // -------------------- [수정됨] 도파민 시스템 (이로치 이름 적용) --------------------
+  // -------------------- [수정됨] 도파민 시스템 (에러 수정) --------------------
   if (msg.indexOf("/도파민") === 0) {
     var spD = msg.split(" ");
     if (spD.length < 2) { replier.reply("사용법: /도파민 [포켓몬UID]\n예: /도파민 12"); return; }
@@ -5055,12 +5084,16 @@ if (isPokemonBusy(u, p.uid)) {
     if (!uidD) { replier.reply("포켓몬UID가 올바르지 않습니다."); return; }
 
     var pD = findUserPokemonByUid(u, uidD);
+    
+    // ★ [수정] 포켓몬이 없으면 여기서 바로 리턴! (순서 중요)
     if (!pD) { replier.reply("해당 포켓몬을 찾을 수 없습니다."); return; }
 
-if (isPokemonBusy(u, p.uid)) {
+    // ★ [수정] 포켓몬을 찾은 "다음에" 탐험 중인지 체크해야 안전함
+    if (isPokemonBusy(u, pD.uid)) {
         replier.reply("🚫 해당 포켓몬은 현재 탐험 중입니다.\n돌아올 때까지 기다려주세요.");
         return;
     }
+
     if (pD.enh >= ENHANCE_MAX) {
       replier.reply("이미 최대 강화 단계(" + ENHANCE_MAX + "강)입니다.");
       return;
@@ -5078,7 +5111,6 @@ if (isPokemonBusy(u, p.uid)) {
     var before = (typeof pD.enh === "number") ? pD.enh : 0;
     var res = rollDopaEnhance();
     
-    // ★ [수정] 여기서 이로치 이름을 가져옵니다
     var pNameD = getDisplayName(pD);
 
     var header = "💥 도파민 강화 시도!\n" + decoName + "님이 숨을 고릅니다...\n━━━━━━━━━━━━━━\n";
@@ -5125,6 +5157,7 @@ if (isPokemonBusy(u, p.uid)) {
     return;
   }
 
+
   // -------------------- /배틀 --------------------
 if (msg === "/배틀" || msg.indexOf("/배틀 ") === 0) {
   ensureUserStats(u);
@@ -5152,6 +5185,11 @@ if (msg === "/배틀" || msg.indexOf("/배틀 ") === 0) {
       replier.reply("사용법: /배틀 또는 /배틀 #번호\n예) /배틀 #33\n/내포켓몬 에서 #번호를 확인해 주세요.");
       commitSave(false);
       return;
+    }
+    if (isPokemonBusy(u, pickUid)) {
+        replier.reply("🚫 해당 포켓몬은 현재 탐험 중입니다.\n배틀에 참가할 수 없습니다.");
+        commitSave(false); // 쿨타임은 돌려주지 않음 (실수 방지)
+        return;
     }
   }
 
