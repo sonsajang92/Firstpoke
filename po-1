@@ -3449,10 +3449,12 @@ function response(room, msg, sender, isGroupChat, replier) {
       replier.reply("유저 조회: " + t.name + "\n\n" + "레벨: " + uu.trainerLv + "\n" + "경험치: " + uu.trainerExp + "\n" + "골드: " + uu.gold + "💰\n" + "볼: 몬스터볼 " + uu.ball + " | 슈퍼볼 " + uu.superBall + " | 하이퍼볼 " + uu.ultraBall + "\n" + "도파민강화권: " + uu.dopaTicket + "\n" + "보유 포켓몬 수: " + (uu.pokemons ? uu.pokemons.length : 0));
       return;
     }
+ // [수정됨] 관리자 지급 기능 (모든 신규 아이템 추가)
     if (sub === "지급") {
       var tn = parts[2];
       var fieldK = parts[3];
       var amt2 = parseInt(parts[4], 10);
+      
       var t2 = getUserByName(d, tn);
       if (!t2) {
         replier.reply("대상 유저를 찾을 수 없습니다.");
@@ -3462,38 +3464,146 @@ function response(room, msg, sender, isGroupChat, replier) {
         replier.reply("지급 수량이 올바르지 않습니다.");
         return;
       }
+      
       var u2 = t2.user;
+      var logName = fieldK; // 로그에 남길 이름
+
       if (fieldK === "골드") {
         u2.gold += amt2;
-        addAdminLog(d, sender, "지급 " + t2.name + " 골드 +" + amt2);
       } else if (fieldK === "경험치") {
         u2.trainerExp += amt2;
-        addAdminLog(d, sender, "지급 " + t2.name + " 경험치 +" + amt2);
       } else if (fieldK === "레벨") {
         u2.trainerLv += amt2;
-        if (u2.trainerLv < 1) 
-          u2.trainerLv = 1;
-        if (u2.trainerLv > 99) 
-          u2.trainerLv = 99;
-        addAdminLog(d, sender, "지급 " + t2.name + " 레벨 +" + amt2);
-      } else if (fieldK === "몬스터볼") {
+        if (u2.trainerLv < 1) u2.trainerLv = 1;
+        if (u2.trainerLv > 99) u2.trainerLv = 99;
+      } 
+      // --- [기본 볼] ---
+      else if (fieldK === "몬스터볼") {
+        if (!u2.ball) u2.ball = 0;
         u2.ball += amt2;
-        addAdminLog(d, sender, "지급 " + t2.name + " 몬스터볼 +" + amt2);
       } else if (fieldK === "슈퍼볼") {
+        if (!u2.superBall) u2.superBall = 0;
         u2.superBall += amt2;
-        addAdminLog(d, sender, "지급 " + t2.name + " 슈퍼볼 +" + amt2);
       } else if (fieldK === "하이퍼볼") {
+        if (!u2.ultraBall) u2.ultraBall = 0;
         u2.ultraBall += amt2;
-        addAdminLog(d, sender, "지급 " + t2.name + " 하이퍼볼 +" + amt2);
-      } else if (fieldK === "도파민" || fieldK === "강화권") {
+      } 
+      // --- [특수 아이템] ---
+      else if (fieldK === "도파민" || fieldK === "강화권") {
+        if (!u2.dopaTicket) u2.dopaTicket = 0;
         u2.dopaTicket += amt2;
-        addAdminLog(d, sender, "지급 " + t2.name + " 도파민강화권 +" + amt2);
-      } else {
-        replier.reply("지급 가능한 항목: 골드/경험치/레벨/몬스터볼/슈퍼볼/하이퍼볼/도파민/강화권");
+        logName = "도파민강화권";
+      } else if (fieldK === "두쫀쿠" || fieldK === "쿠키") {
+        if (!u2.cookie) u2.cookie = 0;
+        u2.cookie += amt2;
+        logName = "두쫀쿠";
+      } else if (fieldK === "이동티켓" || fieldK === "티켓") {
+        if (!u2.ticket) u2.ticket = 0;
+        u2.ticket += amt2;
+        logName = "이동티켓";
+      } else if (fieldK === "티어리셋" || fieldK === "리셋" || fieldK === "티어리셋권") {
+        if (!u2.reroll) u2.reroll = 0;
+        u2.reroll += amt2;
+        logName = "티어리셋권";
+      } else if (fieldK === "킹갓볼" || fieldK === "랄부볼" || fieldK.indexOf("킹갓") !== -1) {
+        if (!u2.godBall) u2.godBall = 0;
+        u2.godBall += amt2;
+        logName = "슈퍼울트라(생략)킹갓볼";
+      } 
+      else {
+        replier.reply("🚫 지급 가능한 항목: 골드/경험치/레벨/몬스터볼/슈퍼볼/하이퍼볼/도파민/두쫀쿠/이동티켓/티어리셋/킹갓볼");
         return;
       }
+
+      addAdminLog(d, sender, "지급 " + t2.name + " " + logName + " +" + amt2);
       commitSave(true);
-      replier.reply("지급 완료\n\n" + "대상: " + t2.name + "\n" + "항목: " + fieldK + "\n" + "수량: +" + amt2);
+      replier.reply("✅ 지급 완료\n\n" + "대상: " + t2.name + "\n" + "항목: " + logName + "\n" + "수량: +" + amt2);
+      return;
+    }
+// -----------------------------------------------------------
+    // [신규] 관리자 권한: 이로치(Shiny) 강제 부여/해제
+    // 사용법: /관리자 이로치 [닉네임] [UID]
+    // -----------------------------------------------------------
+    if (sub === "이로치") {
+      var tnP = parts[2];
+      var uid = parseInt(parts[3], 10);
+      
+      if (!tnP || isNaN(uid)) {
+        replier.reply("사용법: /관리자 이로치 [닉네임] [UID]");
+        return;
+      }
+      
+      var tU = getUserByName(d, tnP);
+      if (!tU) { replier.reply("유저를 찾을 수 없습니다."); return; }
+      
+      var p = findUserPokemonByUid(tU.user, uid);
+      if (!p) { replier.reply("해당 UID의 포켓몬이 없습니다."); return; }
+      
+      // 토글 방식 (없으면 부여, 있으면 해제)
+      if (!p.shiny) {
+        p.shiny = true;
+        replier.reply("✨ [관리자 권한] " + tnP + "님의 포켓몬(#" + uid + ")을 '이로치'로 만들었습니다!");
+      } else {
+        p.shiny = false;
+        replier.reply("⚫ [관리자 권한] " + tnP + "님의 포켓몬(#" + uid + ")의 이로치 상태를 해제했습니다.");
+      }
+      commitSave(true);
+      return;
+    }
+
+    // -----------------------------------------------------------
+    // [신규] 관리자 권한: 잠재력(IV) 커스텀 & 등급 자동 재설정
+    // 사용법: /관리자 잠재력 [닉네임] [UID] [힘] [체력] [민첩]
+    // 예시: /관리자 잠재력 손사장 152 15 150 15  (올만점 S급 만들기)
+    // -----------------------------------------------------------
+    if (sub === "잠재력" || sub === "스탯") {
+      var tnP = parts[2];
+      var uid = parseInt(parts[3], 10);
+      var str = parseInt(parts[4], 10);
+      var hp = parseInt(parts[5], 10);
+      var spd = parseInt(parts[6], 10);
+
+      if (!tnP || isNaN(uid) || isNaN(str) || isNaN(hp) || isNaN(spd)) {
+        replier.reply("사용법: /관리자 잠재력 [닉네임] [UID] [힘(0~15)] [체력(0~150)] [민첩(0~15)]\n예: /관리자 잠재력 닉네임 10 15 150 15");
+        return;
+      }
+
+      var tU = getUserByName(d, tnP);
+      if (!tU) { replier.reply("유저를 찾을 수 없습니다."); return; }
+
+      var p = findUserPokemonByUid(tU.user, uid);
+      if (!p) { replier.reply("해당 UID의 포켓몬이 없습니다."); return; }
+
+      // 1. 입력값 범위 보정 (안전장치)
+      p.ivStr = Math.max(0, Math.min(15, str));
+      p.ivHp = Math.max(0, Math.min(150, hp)); // 체력 IV는 보통 10단위지만, 여기선 입력값 그대로 (최대 150)
+      p.ivSpd = Math.max(0, Math.min(15, spd));
+
+      // 2. 등급(Tier) 자동 재계산 로직
+      // (기존 생성 로직의 범위를 역산하여 등급을 매김)
+      // S급 기준: 힘 13+, 체력 120+, 민첩 13+ (하나라도 미달이면 강등)
+      // 점수제: (힘 + 체력/10 + 민첩) 점수로 판단
+      
+      var score = p.ivStr + Math.floor(p.ivHp / 10) + p.ivSpd;
+      var newGrade = "D";
+
+      if (score >= 38 && p.ivStr >= 13 && p.ivHp >= 120 && p.ivSpd >= 13) newGrade = "S";
+      else if (score >= 28) newGrade = "A";
+      else if (score >= 19) newGrade = "B";
+      else if (score >= 10) newGrade = "C";
+      else newGrade = "D";
+
+      p.grade = newGrade;
+
+      var pName = getDisplayName(p);
+      replier.reply(
+        "🛠️ [관리자 권한] 잠재력 변경 완료\n" +
+        "대상: " + tnP + "의 " + pName + "\n" +
+        "변경된 IV: 힘(" + p.ivStr + ") / 맷집(" + Math.floor(p.ivHp/10) + ") / 민첩(" + p.ivSpd + ")\n" +
+        "재설정된 등급: 【 " + newGrade + " 】"
+      );
+      
+      commitSave(true);
       return;
     }
         // -------------------- [신규] 계정 이동 (닉변 유저 구제용) --------------------
