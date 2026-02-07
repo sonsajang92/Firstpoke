@@ -4816,7 +4816,7 @@ function handleCatch(ballType, ballName, decoName, replier) {
 
     // 🎁 15% 확률로 아이템 발견!
     if (lootRoll < 0.10) { 
-        var itemRoll = Math.random();
+      var itemRoll = Math.random();
         // [확률 테이블] (순서: 극악 확률 -> 흔한 확률 순으로 체크)
         if (itemRoll < 0.001) { // 0.1% : 킹갓볼 (1억 잭팟 👑)
             u.godBall = (u.godBall || 0) + 1;
