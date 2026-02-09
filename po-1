@@ -109,6 +109,34 @@ var MATCH_POOL_KEY = "__GLOBAL_MATCH__";
 // ==================== 배틀 참가 최소 강화 ====================
 var BATTLE_MIN_ENH = 20; // 5 -> 20
 
+// ==================== [레이드] 월드 보스 설정 ====================
+var RAID_BOSS_DEFAULT_HP = 2000000000; // 20억
+var RAID_DURATION_MS = 2 * 60 * 60 * 1000; // 2시간
+
+// ★ [수정] 5분 -> 1분 (간호순 캐리)
+var RAID_COOLDOWN_MS = 2 * 60 * 1000; 
+var RAID_MIN_COIN = 1; 
+var RAID_MAX_COIN = 3; 
+
+// ==================== [다코타 암시장] 가격 및 확률 설정 (인플레이션 패치) ====================
+
+// 1. 아이템 가격 (단위: 다코타 코인)
+// 레이드 1회 1등 기대 수익: 약 150~200 코인
+var DAKOTA_PRICE_BOX = 50;      // 장비상자 (비쌈! 신중하게 구매)
+var DAKOTA_PRICE_DDAL = 500;     // 딸기쿠키 (+3강 확정의 가치)
+var DAKOTA_PRICE_NUT = 1000;     // 황금열매 (졸업급 스펙)
+var DAKOTA_PRICE_PAINT = 2500;   // 황금페인트 (부의 상징)
+
+// 2. 상자깡 확률 설정 (총합 1.0)
+// 꽝 대신 '파편'이 나오므로, 장비 획득 확률은 좀 낮아도 됩니다.
+var BOX_PROB_TIER_3 = 0.01; // 👑 전설 (1%) - 엔드급
+var BOX_PROB_TIER_2 = 0.19; // 🔹 희귀 (19%)
+var BOX_PROB_TIER_1 = 0.40; // ⚪ 일반 (40%)
+// 나머지 40% = '상자파편' (10개 모으면 상자 1개)
+
+
+
+
 // -------------------- 1세대 151 DB --------------------
 var POKEMON_DB = [
   { id: 1, name: "이상해씨", type1: "풀", type2: "독", basePower: 50, rarity: 2 },
@@ -830,8 +858,7 @@ function buildTitleRanking(d, limit, myName) {
   };
 }
 
-
-// [수정됨] 통계 데이터 추가 (칭호 시스템용)
+// [수정됨] 통계 데이터, 아이템 가방, 레이드 변수 초기화 (전체 코드)
 function normalizeUserData(u) {
   if (!u) return;
   
@@ -843,7 +870,7 @@ function normalizeUserData(u) {
   if (typeof u.ball !== "number") u.ball = 0;
   if (typeof u.superBall !== "number") u.superBall = 0;
   if (typeof u.ultraBall !== "number") u.ultraBall = 0;
-  if (typeof u.godBall !== "number") u.godBall = 0; // ★ 전설의 랄부볼 필드 추가
+  if (typeof u.godBall !== "number") u.godBall = 0;
   
   if (typeof u.dopaTicket !== "number") u.dopaTicket = 0; 
   if (typeof u.cookie !== "number") u.cookie = 0;    
@@ -851,33 +878,39 @@ function normalizeUserData(u) {
   if (typeof u.reroll !== "number") u.reroll = 0;    
   if (typeof u.nextFieldRegion !== "string") u.nextFieldRegion = "";
 
+  // ★ [신규] 레이드 관련 변수 추가
+  if (typeof u.dakotaCoin !== "number") u.dakotaCoin = 0; // 다코타 코인
+  if (typeof u.lastRaidAt !== "number") u.lastRaidAt = 0; // 레이드 쿨타임
+
+  // ★ [핵심] 장비 아이템 가방 초기화
+  if (!u.items || typeof u.items !== "object") u.items = {};
+
   // 칭호 초기화
   if (!Array.isArray(u.titles)) u.titles = ["뉴비"];
   if (typeof u.activeTitle !== "string") u.activeTitle = "뉴비";
 
-  // [신규] 통계 데이터 초기화 (칭호 조건용)
+  // 통계 데이터 초기화
   if (!u.stats) u.stats = {};
   if (typeof u.stats.battleWin !== "number") u.stats.battleWin = 0;
   if (typeof u.stats.battleLose !== "number") u.stats.battleLose = 0;
   if (typeof u.stats.battleDraw !== "number") u.stats.battleDraw = 0;
-  if (typeof u.stats.battleStreak !== "number") u.stats.battleStreak = 0; // 연승
-  if (typeof u.stats.bestStreak !== "number") u.stats.bestStreak = 0;     // 최고 연승
+  if (typeof u.stats.battleStreak !== "number") u.stats.battleStreak = 0;
+  if (typeof u.stats.bestStreak !== "number") u.stats.bestStreak = 0;
   
-  // ▼▼▼ 새로 추가된 통계 ▼▼▼
-  if (typeof u.stats.loseStreak !== "number") u.stats.loseStreak = 0;     // 연패 (현재)
-  if (typeof u.stats.maxLoseStreak !== "number") u.stats.maxLoseStreak = 0; // 최고 연패
-  if (typeof u.stats.totalSpentShop !== "number") u.stats.totalSpentShop = 0; // 상점 누적 사용액
-  if (typeof u.stats.totalSpentEnhance !== "number") u.stats.totalSpentEnhance = 0; // 강화 누적 사용액
-  if (typeof u.stats.totalDopaUsed !== "number") u.stats.totalDopaUsed = 0;     // 도파민 사용 횟수
-  if (typeof u.stats.totalDopaReset !== "number") u.stats.totalDopaReset = 0;   // 도파민 초기화 횟수
-  if (typeof u.stats.totalDopaDestroy !== "number") u.stats.totalDopaDestroy = 0; // 도파민 파괴 횟수
-  if (typeof u.stats.totalEscapes !== "number") u.stats.totalEscapes = 0; // 도망 횟수
-  if (typeof u.stats.totalCookieUsed !== "number") u.stats.totalCookieUsed = 0;   // 두쫀쿠 사용량 (추가)
+  if (typeof u.stats.loseStreak !== "number") u.stats.loseStreak = 0;
+  if (typeof u.stats.maxLoseStreak !== "number") u.stats.maxLoseStreak = 0;
+  if (typeof u.stats.totalSpentShop !== "number") u.stats.totalSpentShop = 0;
+  if (typeof u.stats.totalSpentEnhance !== "number") u.stats.totalSpentEnhance = 0;
+  if (typeof u.stats.totalDopaUsed !== "number") u.stats.totalDopaUsed = 0;
+  if (typeof u.stats.totalDopaReset !== "number") u.stats.totalDopaReset = 0;
+  if (typeof u.stats.totalDopaDestroy !== "number") u.stats.totalDopaDestroy = 0;
+  if (typeof u.stats.totalEscapes !== "number") u.stats.totalEscapes = 0;
+  if (typeof u.stats.totalCookieUsed !== "number") u.stats.totalCookieUsed = 0;
   if (typeof u.stats.totalGodBallBought !== "number") u.stats.totalGodBallBought = 0;
   
-  if (typeof u.nextSpawnPid !== "number") u.nextSpawnPid = 0; // 0이면 예약 없음
   if (typeof u.nextSpawnPid !== "number") u.nextSpawnPid = 0;
-  if (typeof u.nextSpawnShiny !== "boolean") u.nextSpawnShiny = false; // 이로치 예약용
+  if (typeof u.nextSpawnPid !== "number") u.nextSpawnPid = 0;
+  if (typeof u.nextSpawnShiny !== "boolean") u.nextSpawnShiny = false;
 
   if (typeof u.lastAttendanceKey !== "string") u.lastAttendanceKey = "";
   if (!Array.isArray(u.pokemons)) u.pokemons = [];
@@ -889,6 +922,10 @@ function normalizeUserData(u) {
   for (var i = 0; i < u.pokemons.length; i++) {
     var p = u.pokemons[i];
     if (!p || typeof p !== "object") continue;
+    
+    // ★ [핵심] 포켓몬별 장비 슬롯 초기화
+    if (p.equip === undefined) p.equip = null;
+
     var pid = parseInt(p.pid, 10);
     var uid = parseInt(p.uid, 10);
     var enh = parseInt(p.enh, 10);
@@ -903,7 +940,8 @@ function normalizeUserData(u) {
       ivStr: p.ivStr || 0,
       ivHp: p.ivHp || 0,
       ivSpd: p.ivSpd || 0,
-      shiny: !!p.shiny // 🔥 [필수] 이 줄을 추가해야 삭제되지 않습니다!
+      shiny: !!p.shiny,
+      equip: p.equip // 장비 데이터 유지
     };
     fixed.push(cleanObj);
   }
@@ -1292,72 +1330,112 @@ function crisisText(name) {
   var arr = [name + " 위기! 숨이 턱까지 찼다!", name + " 위기! 눈앞이 하얘졌다!", name + " 위기! 손에 땀이 난다!", name + " 위기! ‘여기서 지면 안 돼!’"];
   return arr[Math.floor(Math.random() * arr.length)];
 }
-// [수정됨] 체력 계산 (전설 포켓몬 우대 패치)
-function calcHP(db, enh, ivHp) {
+// [수정] 체력 계산 (장비 퍼센트 증가 로직 추가)
+function calcHP(db, enh, ivHp, equipName) {
   var s = getStageFromBase(db.id);
+  if (db.rarity === 5) s = 2; 
   
-  // ★ [핵심 수정] 희귀도 5(전설)는 강제로 '최종 진화형(2단계)' 급 체력 계수를 적용
-  if (db.rarity === 5) {
-      s = 2; 
-  }
-  
-  // 1. 강화당 상승폭 (전설은 이제 100씩 오름)
   var addPerEnh = (s === 0) ? 20 : (s === 1) ? 50 : 100; 
-  
-  // 2. 기본 체력 공식
   var base = 500 + (db.basePower * 12);
-  
-  // 3. 최종 체력 계산
   var hp = base + Math.floor(enh * addPerEnh) + (ivHp || 0);
   
-  // 4. 전설은 기본 맷집 1.2배 추가 보너스 (선택 사항 - 더 딴딴하게 하려면 유지)
-  if (db.rarity === 5) {
-      hp = Math.floor(hp * 1.2);
+  if (db.rarity === 5) hp = Math.floor(hp * 1.2);
+
+  // ★ 장비 효과 적용
+  if (equipName && EQUIP_DB[equipName]) {
+      var item = EQUIP_DB[equipName];
+      
+      // 1. 깡체력 증가 (자뭉열매)
+      if (item.type === "hp_flat") {
+          hp += item.val;
+      }
+      // 2. 퍼센트 증가 (누누의요리) - ★ 신규 로직
+      else if (item.type === "hp_pct") {
+          hp = Math.floor(hp * (1 + item.val));
+      }
   }
 
-  return clamp(hp, 500, 30000);
+  return clamp(hp, 500, 200000); // 체력 상한선 20만으로 상향
 }
 
 
-// [1단계] 개체값(IV) 반영 데미지 공식
-// [수정됨] 배틀 판정 (이로치 데미지 10% 증가 적용)
-function calcHit(attDb, attP, defDb, defP, trainerLvAtt, trainerLvDef) {
-  // 1. 기본 데미지 계산
-  var base = calcDamage(attDb, attP.enh, defDb, defP.enh);
-  
-  // 개체값(IV) 보너스: 힘 스탯 반영
-  var strBonus = 1 + ((attP.ivStr || 0) * 0.015); 
+// [수정] 데미지 계산 (장비 공격력/방어력/속성 반영)
+function calcDamage(attDb, attEnh, defDb, defEnh, attEquip, defEquip) {
+  var atkType = attDb.type1;
+  var mult = typeMultiplierAdjusted(atkType, defDb.type1);
+  if (defDb.type2) mult = Math.min(mult, TYPE_STRONG * 1.4);
 
-  // ★ [이로치 특전] 빛나는 오라! 데미지 10% 추가 (1.1배)
-  if (attP.shiny) {
-    strBonus *= 1.1; 
+  // --- 기본 스탯 계산 ---
+  var attPid = attDb.id || attDb.pid;
+  var defPid = defDb.id || defDb.pid;
+  var aStage = stageBattleMul(attPid);
+  var dStage = stageBattleMul(defPid);
+  var aR = rarityBattleMul(attDb.rarity || 2);
+  var dR = rarityBattleMul(defDb.rarity || 2);
+
+  var atkPower = attDb.basePower * (1 + (attEnh * ATK_ENH_RATE)) * aStage.atk * aR;
+  var defPower = defDb.basePower * (1 + (defEnh * DEF_ENH_RATE)) * dStage.def * dR;
+
+  // ★ [장비] 공격자 보너스
+  if (attEquip && EQUIP_DB[attEquip]) {
+      var eq = EQUIP_DB[attEquip];
+      // 1. 깡공격력 % 증가
+      if (eq.type === "atk_pct") atkPower *= (1 + eq.val);
+      // 2. 속성 맞춤 보너스 (예: 리자몽 + 불꽃구슬)
+      if (eq.type === "type_boost") {
+          if (attDb.type1 === eq.cond || attDb.type2 === eq.cond) {
+              atkPower *= (1 + eq.val);
+          }
+      }
   }
 
+  // ★ [장비] 방어자 보너스 (데미지 감소 = 방어력 증가로 환산 적용)
+  if (defEquip && EQUIP_DB[defEquip]) {
+      var eq = EQUIP_DB[defEquip];
+      if (eq.type === "def_pct") {
+          // 데미지 감소율을 방어력 증가로 역산 적용 (단순화)
+          // 받는 피해 30% 감소 -> 방어력 약 1.42배
+          defPower *= (1 / (1 - eq.val)); 
+      }
+  }
+
+  var baseDmg = atkPower * 0.35;
+  var powerRatio = atkPower / Math.max(1, defPower);
+  var score = Math.floor(baseDmg * powerRatio * mult);
+
+  return { score: Math.max(1, score), mult: mult };
+}
+
+// [수정] 스피드(선공/회피)에 장비 반영
+function calcHit(attDb, attP, defDb, defP, trainerLvAtt, trainerLvDef) {
+  // 데미지 계산 시 장비 정보 전달
+  var base = calcDamage(attDb, attP.enh, defDb, defP.enh, attP.equip, defP.equip);
+  
+  var strBonus = 1 + ((attP.ivStr || 0) * 0.015); 
+  if (attP.shiny) strBonus *= 1.1; 
   base.score = Math.floor(base.score * strBonus);
 
-  // 2. 회피율 계산 (공속 반영)
-  var spdDiff = (defP.ivSpd || 0) - (attP.ivStr || 0); 
-  var dodge = 0.10 
-    + clamp(((trainerLvDef || 1) - (trainerLvAtt || 1)) * 0.0008, -0.03, 0.03) 
-    + clamp((defP.enh - attP.enh) * 0.004, -0.02, 0.02)
-    + (spdDiff * 0.002); 
+  // ★ [장비] 스피드 계산
+  var spdAtt = (attP.ivSpd || 0);
+  var spdDef = (defP.ivSpd || 0);
+  
+  if (attP.equip && EQUIP_DB[attP.equip] && EQUIP_DB[attP.equip].type === "spd_flat") spdAtt += EQUIP_DB[attP.equip].val;
+  if (defP.equip && EQUIP_DB[defP.equip] && EQUIP_DB[defP.equip].type === "spd_flat") spdDef += EQUIP_DB[defP.equip].val;
 
+  var spdDiff = spdDef - spdAtt; 
+  
+  // (이하 기존 회피/크리 로직 동일...)
+  var dodge = 0.10 + clamp(((trainerLvDef || 1) - (trainerLvAtt || 1)) * 0.0008, -0.03, 0.03) + clamp((defP.enh - attP.enh) * 0.004, -0.02, 0.02) + (spdDiff * 0.002); 
   dodge = clamp(dodge, 0.05, 0.25); 
 
-  // 3. 방어/크리 계산
   var guard = 0.12 + clamp(defP.enh * 0.002, 0, 0.04);
   var crit = 0.12 + clamp(attP.enh * 0.001, 0, 0.03) + ((attP.ivSpd || 0) * 0.003);
-  
-  // 이로치는 크리티컬 확률도 아주 살짝(2%) 높여줄까요? (선택사항)
   if (attP.shiny) crit += 0.02; 
-
   crit = clamp(crit, 0.10, 0.25);
 
   var swing = rnd(0.88, 1.12);
 
-  if (Math.random() < dodge) {
-    return { dodged: true, guarded: false, crit: false, dmg: 0, mult: base.mult };
-  }
+  if (Math.random() < dodge) return { dodged: true, guarded: false, crit: false, dmg: 0, mult: base.mult };
 
   var isGuard = (Math.random() < guard);
   var isCrit = (Math.random() < crit);
@@ -1365,6 +1443,7 @@ function calcHit(attDb, attP, defDb, defP, trainerLvAtt, trainerLvDef) {
 
   return { dodged: false, guarded: isGuard, crit: isCrit, dmg: dmg, mult: base.mult };
 }
+
 
 // [수정됨] 배틀 로그 시뮬레이터 (초반 10턴 + 후반 4턴 노출)
 function simulateBattleLog(aName, aDb, aP, aTLv, bName, bDb, bP, bTLv) {
@@ -1722,12 +1801,46 @@ function getBattleEligiblePokemons(u) {
   return out;
 }
 
-// [수정됨] 희귀도/턴 보정 (룰 삭제 -> 무조건 1.0배 정정당당 승부)
+// [수정됨] 희귀도/턴 보정 (2-3티어 통합 밸런스)
 function getRarityBattleModifier(db, turn, hpRate) {
-  // 기존의 초반/후반 보정 룰을 제거하고
-  // 모든 포켓몬이 턴 상관없이 정직하게 100% 능력치로 싸웁니다.
-  return { atk: 1.0, def: 1.0 };
+  var r = db.rarity || 1;
+  var atkMod = 1.0;
+  var defMod = 1.0;
+
+  // 1. [2~3티어] 언더독의 반란 (버터플, 피죤투, 라이츄 등)
+  // "무시하지 마라! 쥐도 궁지에 몰리면 고양이를 문다."
+  // 전략: 맞으면서 버티다가, 체력 절반 이하(위기)일 때 폭딜을 넣어야 함.
+  if (r <= 3) {
+      if (hpRate <= 0.5) { 
+          atkMod = 1.25; // 공격력 25% 떡상 (배수의 진)
+      }
+  }
+  
+  // 2. [4티어] 메이저 포켓몬 (리자몽, 망나뇽, 갸라도스 등)
+  // "가장 치열하게 싸우는 허리 라인"
+  // 전략: 초반 탐색전이 끝난 중반(4~8턴)에 승부를 봐야 함.
+  else if (r === 4) {
+      if (turn >= 4 && turn <= 8) {
+          atkMod = 1.15; // 공 15% 증가
+          defMod = 1.10; // 방 10% 증가
+      }
+  }
+  
+  // 3. [5티어] 전설의 포켓몬 (뮤츠, 썬더, 프리져 등)
+  // "압도적인 체급의 보스"
+  // 전략: 초반엔 방심하지만, 장기전으로 갈수록 재앙이 됨.
+  else if (r === 5) {
+      if (turn <= 3) {
+          atkMod = 0.90; // 초반 3턴: 10% 봐줌 (방심)
+      } else if (turn >= 10) {
+          atkMod = 1.45; // 10턴 이후: 45% 뎀증 (재앙)
+          defMod = 1.15; // 맷집도 세짐
+      }
+  }
+
+  return { atk: atkMod, def: defMod };
 }
+
 
 // -------------------- 연속배틀 보상 배율 --------------------
 function chainRewardMult(i) {
@@ -2727,6 +2840,36 @@ function buildBattlePowerRanking(d, topN, sender) {
   return { rows: rows, myIdx: myIdx, topN: topN };
 }
 
+// 🎒 [장비] 아이템 데이터베이스
+// type: atk_pct(공%), hp_flat(체력+), def_pct(방%), spd_flat(속도+)
+//       type_boost(속성뎀증)
+var EQUIP_DB = {
+  // --- [티어 1] ---
+  "힘의머리띠": { type: "atk_pct", val: 0.10, icon: "🎗️", desc: "공격력 10% 증가" },
+  "자뭉열매":   { type: "hp_flat", val: 1000, icon: "🍒", desc: "최대 체력 +1000" },
+  "구애스카프": { type: "spd_flat", val: 15,   icon: "🧣", desc: "스피드 +15 (선공 유리)" },
+  "방어보석":   { type: "def_pct", val: 0.15, icon: "💠", desc: "받는 피해 15% 감소" },
+
+  // --- [티어 2] ---
+  "불꽃구슬":   { type: "type_boost", val: 0.15, cond: "불", icon: "🔥", desc: "[불] 속성 기술 위력 15% 증가" },
+  "물방울구슬": { type: "type_boost", val: 0.15, cond: "물", icon: "💧", desc: "[물] 속성 기술 위력 15% 증가" },
+  "기적의씨":   { type: "type_boost", val: 0.15, cond: "풀", icon: "🌱", desc: "[풀] 속성 기술 위력 15% 증가" },
+  "자석":       { type: "type_boost", val: 0.15, cond: "전기", icon: "🧲", desc: "[전기] 속성 기술 위력 15% 증가" },
+  "녹지않는얼음":{ type: "type_boost", val: 0.15, cond: "얼음", icon: "🧊", desc: "[얼음] 속성 기술 위력 15% 증가" },
+  "부드러운모래":{ type: "type_boost", val: 0.15, cond: "땅", icon: "🏜️", desc: "[땅] 속성 기술 위력 15% 증가" },
+  "날카로운부리":{ type: "type_boost", val: 0.15, cond: "비행", icon: "🪶", desc: "[비행] 속성 기술 위력 15% 증가" },
+  "용의이빨":   { type: "type_boost", val: 0.15, cond: "드래곤", icon: "🦷", desc: "[드래곤] 속성 기술 위력 15% 증가" },
+  "검은안경":   { type: "type_boost", val: 0.15, cond: "악", icon: "🕶️", desc: "[악]/고스트 등 위력 15% 증가" },
+
+  // --- [티어 3: 엔드급 (압도적 성능)] ---
+  "강부장의교육": { type: "atk_pct", val: 0.40, icon: "👺", desc: "공격력 40% 증가 (파괴신)", tier: 3 },
+  // ★ [변경] 체력 깡수치 -> 퍼센트 증가 (후반 효율 극대화)
+  "누누의요리":   { type: "hp_pct",  val: 0.30, icon: "🥘", desc: "최대 체력 30% 증가 (불사신)", tier: 3 },
+  "꾸꾸의탄생":   { type: "spd_flat", val: 80,   icon: "🐣", desc: "스피드 +80 (선공 확정)", tier: 3 },
+  "민준이지갑":   { type: "def_pct", val: 0.40, icon: "💸", desc: "받는 피해 40% 감소 (절대방어)", tier: 3 }
+};
+
+
 // -------------------- 운영자(관리자) 설정 --------------------
 var ADMIN_MAP = {
   "손사장": true};
@@ -2825,40 +2968,42 @@ function globalConfigText(d) {
   ensureConfig(d);
   return ("전역 설정\n\n" + "상점\n" + "몬스터볼: " + d.config.shop.BALL + "💰\n" + "슈퍼볼: " + d.config.shop.SUPER + "💰\n" + "하이퍼볼: " + d.config.shop.ULTRA + "💰\n" + "도파민강화권: " + d.config.shop.DOPA + "💰\n\n" + "토글\n" + "이벤트: " + (d.config.flags.EVENT_ON ? "ON" : "OFF") + "\n" + "필드: " + (d.config.flags.FIELD_ON ? "ON" : "OFF") + "\n" + "강화: " + (d.config.flags.ENHANCE_ON ? "ON" : "OFF") + "\n" + "도파민강화: " + (d.config.flags.DOPA_ON ? "ON" : "OFF"));
 }
-// [최종 업데이트] 관리자 도움말 (숨겨진 기능 포함 전체 리스트)
+// [최종 업데이트] 관리자 도움말 (레이드 & 장비 포함)
 function adminHelpText() {
   return (
-    "👑 [운영자 관리 패널]\n\n" +
+    "👑 [운영자 관리 패널 v2.3]\n\n" +
     
+    "🦖 [레이드 관리] (NEW)\n" +
+    "/관리자 레이드소환 [체력(억)]\n" +
+    "└ 예: /관리자 레이드소환 30\n" +
+    "/관리자 레이드종료 (강제 삭제)\n\n" +
+    
+    "🎁 [지급 및 보상]\n" +
+    "/관리자 지급 [닉네임] [항목] [수량]\n" +
+    "└ 자원: 골드, 경험치, 레벨\n" +
+    "└ 아이템: 몬, 슈, 하, 킹갓볼, 도파민, 쿠키, 리셋, 티켓\n" +
+    "└ 장비: 힘의머리띠, 누누의요리 등 (자동인식)\n" +
+    "/관리자 전체보상 [항목] [수량]\n\n" +
+
     "📢 [서버 관리]\n" +
     "/관리자 공지 [내용]\n" +
-    "/관리자 전체보상 [항목] [수량]\n" +
-    "/관리자 저장 (강제 저장)\n" +
-    "/관리자 데이터정리 (미접속자 정리)\n\n" +
-
-    "🔎 [조회 및 설정]\n" +
-    "/관리자 조회 [닉네임]\n" +
-    "/관리자 전역조회 / 전역설정 [키] [값]\n" +
-    "/관리자 계정이동 [구닉네임] [신닉네임]\n" +
-    "/관리자 전적초기화 [닉네임/생략시전체]\n\n" +
-    
-    "🎁 [지급 및 수정]\n" +
-    "/관리자 지급 [닉네임] [항목] [수량]\n" +
-    "└ 골드, 경험치, 레벨, 몬스터볼(슈/하), 킹갓볼\n" +
-    "└ 도파민, 두쫀쿠, 이동티켓, 티어리셋\n\n" +
+    "/관리자 저장 / 데이터정리\n" +
+    "/관리자 전적초기화 [닉네임/생략시전체]\n" +
+    "/관리자 계정이동 [구닉] [신닉]\n\n" +
 
     "👾 [포켓몬 관리]\n" +
     "/관리자 포켓몬 [닉네임]\n" +
-    "/관리자 스폰 [닉네임] [이름] [이로치Y/N]\n" +
     "/관리자 포켓몬지급 [닉네임] [이름]\n" +
-    "/관리자 포켓몬삭제 [닉네임] [#UID]\n" +
-    "/관리자 강화 [닉네임] [#UID] [수치]\n\n" +
+    "/관리자 스폰 [닉네임] [이름] [이로치Y/N]\n" +
+    "/관리자 삭제 [닉네임] [UID]\n" +
+    "/관리자 강화 [닉네임] [UID] [수치]\n\n" +
     
-    "🧪 [커스텀/에디트] (신규)\n" +
-    "/관리자 이로치 [닉네임] [#UID]\n" +
-    "/관리자 잠재력 [닉네임] [#UID] [힘] [체력] [민첩]"
+    "🧪 [커스텀 에디트]\n" +
+    "/관리자 이로치 [닉네임] [UID]\n" +
+    "/관리자 잠재력 [닉네임] [UID] [힘] [체] [민]"
   );
 }
+
 // -------------------- roomActive: 메모리 전용(파일 저장 X) --------------------
 // 방별 최근 활동 유저(배틀 매칭용) - 앱 재시작 시 리셋됨 (의도된 동작)
 var ROOM_ACTIVE_MEM = {};// { [room]: { [sender]: lastActiveMs } }
@@ -2983,32 +3128,7 @@ function stageBattleMul(pid) {
   atk: 1.32, 
   def: 1.16};
 }
-// [수정됨] 데미지 계산 공식 (타격감 패치: 공격력의 35% 반영)
-function calcDamage(attDb, attEnh, defDb, defEnh) {
-  var atkType = attDb.type1;
-  var mult = typeMultiplierAdjusted(atkType, defDb.type1);
-  if (defDb.type2) mult = Math.min(mult, TYPE_STRONG * 1.4);
 
-  var attPid = attDb.id || attDb.pid;
-  var defPid = defDb.id || defDb.pid;
-  var aStage = stageBattleMul(attPid);
-  var dStage = stageBattleMul(defPid);
-  var aR = rarityBattleMul(attDb.rarity || 2);
-  var dR = rarityBattleMul(defDb.rarity || 2);
-
-  var atkPower = attDb.basePower * (1 + (attEnh * ATK_ENH_RATE)) * aStage.atk * aR;
-  var defPower = defDb.basePower * (1 + (defEnh * DEF_ENH_RATE)) * dStage.def * dR;
-
-  // [핵심 변경] 데미지 = 공격력의 35% * (공격/방어 비율) * 상성
-  var baseDmg = atkPower * 0.35;
-  var powerRatio = atkPower / Math.max(1, defPower);
-  var score = Math.floor(baseDmg * powerRatio * mult);
-
-  return {
-    score: Math.max(1, score), 
-    mult: mult
-  };
-}
 
 // -------------------- 진화 유틸 --------------------
 function buildPreMap() {
@@ -3388,9 +3508,6 @@ function debugBattle(d, sender, room, replier) {
 var TRANSACTION_LOCK = {};
 
 // ==================================================================
-// 🏛️ [v3.2] 체육관 관장 (후반부 전설 에이스 배치 + 현실적 난이도)
-// ==================================================================
-// ==================================================================
 // 🏛️ [v3.4 최종] 체육관 관장 (입장료 현실화: 50만 ~ 2,000만)
 // ==================================================================
 var GYM_LEADERS = [
@@ -3461,25 +3578,6 @@ var NPC_CHAMPION = {
   ]
 };
 
-// ==================================================================
-// 👑 [v3.2] NPC 챔피언 '레드' (근본 조합 + 현실적 스펙)
-// ==================================================================
-var NPC_CHAMPION = {
-  name: "레드(NPC)",
-  isNpc: true,
-  lineup: [
-    // 선봉: 피카츄 (작지만 매운맛)
-    { id: 25, name: "피카츄", enh: 85, grade: "S", shiny: true }, 
-    // 탱커 라인
-    { id: 143, name: "잠만보", enh: 80, grade: "S", shiny: false },
-    { id: 131, name: "라프라스", enh: 80, grade: "S", shiny: false },
-    // 스타팅 3대장 (밸런스형)
-    { id: 3, name: "이상해꽃", enh: 82, grade: "S", shiny: false },
-    { id: 9, name: "거북왕", enh: 82, grade: "S", shiny: false },
-    // 에이스: 리자몽 (가장 강력함)
-    { id: 6, name: "리자몽", enh: 90, grade: "S", shiny: true } 
-  ]
-};
 
 // ==================== [핵심] 릴레이 배틀 엔진 (3v3, 6v6 공용) ====================
 function simulateRelayBattle(teamA, teamB, nameA, nameB, isChampBattle) {
@@ -3598,6 +3696,129 @@ function simulateRelayBattle(teamA, teamB, nameA, nameB, isChampBattle) {
 }
 
 
+// ==================================================================
+// 🦖 [월드 보스] 레이드 시스템 엔진 (공동 금고 & N빵 분배)
+// ==================================================================
+
+// 1. 보스 소환 (금고 초기화 추가)
+function spawnRaidBoss(d, hpBillions) {
+    var hp = (hpBillions || 20) * 100000000; 
+    d.worldBoss = {
+        active: true,
+        name: "다코타 뮤츠", 
+        maxHp: hp,
+        curHp: hp,
+        startTime: nowMs(),
+        endTime: nowMs() + RAID_DURATION_MS,
+        logs: {}, 
+        lastHitter: null,
+        rewardPool: 0 // ★ [신규] 코인이 모이는 공동 금고
+    };
+    return "🦖 [경고] 월드 보스 '다코타 뮤츠'가 소환되었습니다!\n체력: " + fmtNum(hp) + "\n제한시간: 2시간\n명령어: /레이드";
+}
+
+// 2. 레이드 종료 및 보상 정산 (실패 보상 & 성공 보너스 적용)
+function endRaidBoss(d, isClear) {
+    if (!d.worldBoss || !d.worldBoss.active) return "진행 중인 레이드가 없습니다.";
+    
+    var boss = d.worldBoss;
+    if (!boss.logs) boss.logs = {}; 
+
+    var rankMsg = "";
+    
+    // --- 1. 랭킹 및 통계 산정 (성공/실패 공통) ---
+    var list = [];
+    var totalDamage = 0; 
+    
+    for (var name in boss.logs) {
+        var dmg = boss.logs[name];
+        list.push({ name: name, dmg: dmg });
+        totalDamage += dmg;
+    }
+    // 딜량 내림차순 정렬
+    list.sort(function(a, b) { return b.dmg - a.dmg; });
+    
+    // --- 2. 금고(Pool) 계산 ---
+    var totalPool = boss.rewardPool || 0; // 현재 모인 돈
+    
+    // ★ [성공 보너스] 토벌 성공 시 1000개 추가!
+    if (isClear) {
+        totalPool += 1000;
+    }
+    
+    var participantCount = list.length;
+    
+    // 기본 지급 (참가상 3개)
+    var basicReward = 3; 
+    var usedForBasic = participantCount * basicReward;
+    
+    // 성과급 재원 (금고 - 참가상)
+    var performancePool = Math.max(0, totalPool - usedForBasic);
+    
+    // --- 3. 분배 로직 ---
+    for (var i = 0; i < list.length; i++) {
+        var r = list[i];
+        var u = d.users[r.name];
+        if (!u) continue;
+        
+        // 지분율 (내 딜 / 전체 딜)
+        var share = (totalDamage > 0) ? (r.dmg / totalDamage) : 0;
+        var bonusCoin = Math.floor(performancePool * share);
+        
+        var finalCoin = basicReward + bonusCoin;
+        var lastHitMsg = "";
+
+        // ★ 막타 보너스는 성공했을 때만 지급
+        if (isClear && boss.lastHitter === r.name) {
+            finalCoin += 30;
+            lastHitMsg = " (막타+30)";
+        }
+        
+        u.dakotaCoin = (u.dakotaCoin || 0) + finalCoin;
+        
+        // 랭킹 로그 (상위 5명)
+        if (i < 5) {
+            var percent = Math.floor(share * 100);
+            rankMsg += (i + 1) + "위 " + r.name + " (" + percent + "% 기여) ➔ +" + fmtNum(finalCoin) + "🪙" + lastHitMsg + "\n";
+        }
+    }
+    
+    var title = "";
+    var subTitle = "";
+    
+    if (isClear) {
+        title = "🎉 레이드 토벌 성공! 🎉";
+        subTitle = "💰 성공 보너스 +1,000코인 포함 분배 완료!";
+    } else {
+        title = "💀 제한 시간 종료... 토벌 실패";
+        subTitle = "⚠️ 보스는 놓쳤지만, 적립된 코인은 정산하여 지급됩니다.";
+    }
+    
+    var resultMsg = title + "\n\n" +
+                    subTitle + "\n" +
+                    "💰 총 분배 코인: " + fmtNum(totalPool) + "개\n" +
+                    "👥 참여자: " + participantCount + "명\n" +
+                    "━━━━━━━━━━━━━━\n" +
+                    "[🏅 명예의 전당 & 정산 결과]\n" + rankMsg;
+    
+    d.worldBoss = null; // 보스 삭제
+    return resultMsg;
+}
+
+// 3. 전투력 계산
+function getRaidPower(u) {
+    if (!u.champTeam || u.champTeam.length === 0) return 0;
+    var totalPower = 0;
+    for(var i=0; i<u.champTeam.length; i++) {
+        var p = findUserPokemonByUid(u, u.champTeam[i]);
+        if(p) totalPower += calcBattlePower(p); 
+    }
+    if (u.champTeam.length < 6) totalPower = Math.floor(totalPower * 0.5); 
+    return totalPower;
+}
+
+
+
 // -------------------- 메인 응답 --------------------
 function response(room, msg, sender, isGroupChat, replier) {
   trackRoomActiveMem(room, sender);
@@ -3606,205 +3827,296 @@ function response(room, msg, sender, isGroupChat, replier) {
     ROOM_ACTIVE_MEM[MATCH_POOL] = {};
   ROOM_ACTIVE_MEM[MATCH_POOL][sender] = Date.now();
   var d = getDataCached();
- if (msg.indexOf("/관리자") === 0) {
+
+  // ==================================================================
+  // 👑 [관리자] 통합 시스템 (레이드 + 장비지급 + 리팩토링)
+  // ==================================================================
+  if (msg.indexOf("/관리자") === 0) {
     if (!isAdmin(sender)) {
-      replier.reply("운영자만 사용할 수 있는 명령어입니다.");
+      replier.reply("🚫 접근 권한이 없습니다.");
       return;
     }
+
     var parts = msg.split(" ").filter(Boolean);
     var sub = parts[1] || "도움";
 
-    // -------------------- [시스템] 자동 업데이트 --------------------
-    if (sub === "업데이트") {
-      replier.reply("⏳ 깃허브에서 최신 코드를 받아오는 중입니다...\n" + GITHUB_RAW_URL);
-      
-      try {
-        // 1. Jsoup으로 깃허브 Raw 코드 긁어오기
-        var newCode = org.jsoup.Jsoup.connect(GITHUB_RAW_URL).ignoreContentType(true).execute().body();
-        
-        if (!newCode || newCode.length < 100) {
-          replier.reply("🚫 코드를 가져오는데 실패했습니다. (내용이 너무 짧거나 비어있음)");
-          return;
-        }
-
-        // 2. 현재 스크립트 파일 덮어쓰기
-        // 경로: /sdcard/msgbot/Bots/스크립트명.js
-        var path = "/sdcard/msgbot/Bots/" + SCRIPT_NAME + ".js";
-        var file = new java.io.File(path);
-        
-        // 백업 저장 (선택사항: 혹시 모르니 .bak 파일 하나 생성)
-        var backupPath = path + ".bak";
-        var currentCode = readFile(path); // 기존 readFile 함수 활용
-        if (currentCode) writeFile(backupPath, currentCode);
-
-        // 새 코드 저장
-        var fos = new java.io.FileOutputStream(file);
-        var str = new java.lang.String(newCode);
-        fos.write(str.getBytes());
-        fos.close();
-        
-        // 3. 봇 재로딩 (컴파일)
-        replier.reply("✅ 다운로드 완료! 봇을 재로딩합니다...");
-        Api.reload(SCRIPT_NAME); 
-        
-        return;
-
-      } catch (e) {
-        replier.reply("❌ 업데이트 실패!\n" + e);
-        java.lang.System.out.println(e); // 로그 출력
-      }
-      return;
-    }
-
-    // -------------------- [기본] 도움말 & 설정 --------------------
+    // -------------------- 1. [도움말 & 업데이트] --------------------
     if (sub === "도움") {
       replier.reply(adminHelpText());
       return;
     }
-    if (sub === "전역조회") {
-      replier.reply(globalConfigText(d));
-      return;
-    }
-    if (sub === "전역설정") {
-      var key = parts[2];
-      var val = parseInt(parts[3], 10);
-      if (!key) { replier.reply("사용법: /관리자 전역설정 변수명 값"); return; }
-      
-      if (key.indexOf("SHOP_PRICE") !== -1) {
-          if (key === "SHOP_PRICE_BALL") setShopPrice(d, "BALL", val);
-          else if (key === "SHOP_PRICE_SUPER") setShopPrice(d, "SUPER", val);
-          else if (key === "SHOP_PRICE_ULTRA") setShopPrice(d, "ULTRA", val);
-          else if (key === "SHOP_PRICE_DOPA") setShopPrice(d, "DOPA", val);
-          else { replier.reply("알 수 없는 상점 키입니다."); return; }
-      } else {
-          // 기타 플래그 설정 등 확장 가능
-          replier.reply("지원하지 않는 설정 키입니다.");
-          return;
+
+    if (sub === "업데이트") {
+      replier.reply("⏳ 깃허브에서 최신 코드를 받아오는 중입니다...\n" + GITHUB_RAW_URL);
+      try {
+        // ★ [수정] URL 뒤에 '?v=시간'을 붙여서 캐시를 무시하고 최신본을 강제로 가져옴
+        var noCacheUrl = GITHUB_RAW_URL + "?v=" + new Date().getTime();
+        var newCode = org.jsoup.Jsoup.connect(noCacheUrl).ignoreContentType(true).execute().body();
+        
+        if (!newCode || newCode.length < 100) {
+          replier.reply("🚫 실패: 코드가 너무 짧거나 비어있습니다."); return;
+        }
+        
+        // 경로와 파일명 확인 (파일명 뒤에 .js가 붙는지 확인 필수)
+        var path = "/sdcard/msgbot/Bots/" + SCRIPT_NAME + ".js";
+        
+        // (기존 코드 그대로)
+        var currentCode = readFile(path);
+        if (currentCode) writeFile(path + ".bak", currentCode); // 백업
+        writeFile(path, newCode); // 덮어쓰기
+        
+        replier.reply("✅ 다운로드 완료! 봇을 재로딩합니다...");
+        Api.reload(SCRIPT_NAME);
+      } catch (e) {
+        replier.reply("❌ 업데이트 실패!\n" + e);
       }
-      addAdminLog(d, sender, "전역설정 " + key + "=" + val);
-      commitSave(true);
-      replier.reply("✅ 설정 완료: " + key + " = " + val);
       return;
     }
 
-    // -------------------- [서버 관리] 공지/저장/정리 --------------------
+
+    // -------------------- 2. [레이드 관리] (신규) --------------------
+    if (sub === "레이드소환") {
+        var hpInput = parseInt(parts[2]); // 억 단위
+        var msgRaid = spawnRaidBoss(d, hpInput || 20); // 기본 20억
+        commitSave(true);
+        replier.reply(msgRaid);
+        return;
+    }
+    
+    if (sub === "레이드종료") {
+        d.worldBoss = null; // 강제 삭제
+        commitSave(true);
+        replier.reply("🗑️ 레이드가 강제 종료되었습니다.");
+        return;
+    }
+
+    // -------------------- 3. [지급] 자원/소모품/장비/다코타 통합 --------------------
+    if (sub === "지급") {
+      var targetName = parts[2];
+      var itemKey = parts[3];
+      var amount = parseInt(parts[4], 10);
+
+      if (!targetName || !itemKey || isNaN(amount)) {
+        replier.reply("사용법: /관리자 지급 [닉네임] [아이템명] [수량]");
+        return;
+      }
+
+      var t = getUserByName(d, targetName);
+      if (!t) { replier.reply("🚫 유저를 찾을 수 없습니다."); return; }
+      
+      normalizeUserData(t.user); // 가방 안전 초기화
+
+      var logMsg = "";
+
+      // [A] 기본 자원 (코인 추가됨)
+      if (itemKey === "골드") { t.user.gold += amount; logMsg = "골드"; }
+      else if (["코인", "다코타코인", "다코타"].indexOf(itemKey) !== -1) { 
+          t.user.dakotaCoin = (t.user.dakotaCoin || 0) + amount; 
+          logMsg = "다코타 코인"; 
+      }
+      else if (itemKey === "경험치") { t.user.trainerExp += amount; logMsg = "경험치"; }
+      else if (itemKey === "레벨") { t.user.trainerLv = Math.min(MAX_LV, t.user.trainerLv + amount); logMsg = "레벨"; }
+      
+      // [B] 소모품 (매핑)
+      else if (["몬스터볼","몬","ㅁ"].indexOf(itemKey) !== -1) { t.user.ball += amount; logMsg = "몬스터볼"; }
+      else if (["슈퍼볼","슈","ㅅ"].indexOf(itemKey) !== -1) { t.user.superBall += amount; logMsg = "슈퍼볼"; }
+      else if (["하이퍼볼","하","ㅎ"].indexOf(itemKey) !== -1) { t.user.ultraBall += amount; logMsg = "하이퍼볼"; }
+      else if (itemKey.indexOf("킹갓") !== -1) { t.user.godBall = (t.user.godBall||0) + amount; logMsg = "킹갓볼"; }
+      else if (["도파민","강화권"].indexOf(itemKey) !== -1) { t.user.dopaTicket += amount; logMsg = "도파민강화권"; }
+      else if (["두쫀쿠","쿠키"].indexOf(itemKey) !== -1) { t.user.cookie += amount; logMsg = "두쫀쿠"; }
+      else if (["티어리셋","리셋"].indexOf(itemKey) !== -1) { t.user.reroll += amount; logMsg = "티어리셋권"; }
+      else if (["이동티켓","티켓"].indexOf(itemKey) !== -1) { t.user.ticket += amount; logMsg = "이동티켓"; }
+
+      // [C] ★ 다코타 아이템 (신규 추가)
+      // 아이템 가방(u.items)에 직접 넣어줍니다.
+      else if (["장비상자", "상자", "보물상자"].indexOf(itemKey) !== -1) { 
+          if (!t.user.items) t.user.items = {};
+          t.user.items["장비상자"] = (t.user.items["장비상자"] || 0) + amount; 
+          logMsg = "📦 장비상자"; 
+      }
+      else if (["상자파편", "파편"].indexOf(itemKey) !== -1) { 
+          if (!t.user.items) t.user.items = {};
+          t.user.items["상자파편"] = (t.user.items["상자파편"] || 0) + amount; 
+          logMsg = "🧩 상자파편"; 
+      }
+      else if (["딸기쿠키", "딸기", "딸쫀쿠"].indexOf(itemKey) !== -1) { 
+          if (!t.user.items) t.user.items = {};
+          t.user.items["딸기쿠키"] = (t.user.items["딸기쿠키"] || 0) + amount; 
+          logMsg = "🍓 딸기쿠키"; 
+      }
+      else if (["황금열매", "열매", "라즈열매"].indexOf(itemKey) !== -1) { 
+          if (!t.user.items) t.user.items = {};
+          t.user.items["황금열매"] = (t.user.items["황금열매"] || 0) + amount; 
+          logMsg = "🥜 황금열매"; 
+      }
+      else if (["황금페인트", "페인트", "이로치"].indexOf(itemKey) !== -1) { 
+          if (!t.user.items) t.user.items = {};
+          t.user.items["황금페인트"] = (t.user.items["황금페인트"] || 0) + amount; 
+          logMsg = "🎨 황금페인트"; 
+      }
+
+      // [D] 장비 아이템 (EQUIP_DB 자동 인식)
+      else if (EQUIP_DB[itemKey]) {
+          if (!t.user.items) t.user.items = {};
+          t.user.items[itemKey] = (t.user.items[itemKey] || 0) + amount;
+          var icon = EQUIP_DB[itemKey].icon || "🛡️";
+          logMsg = icon + " " + itemKey;
+      }
+      else {
+          replier.reply("🚫 존재하지 않는 아이템입니다: " + itemKey); return;
+      }
+
+      commitSave(true);
+      replier.reply("✅ 지급 완료: " + t.name + " 님에게 [" + logMsg + "] x" + amount);
+      return;
+    }
+
+
+    // -------------------- 4. [전체보상] (장비 포함) --------------------
+    if (sub === "전체보상") {
+      var itemKey = parts[2];
+      var amount = parseInt(parts[3], 10);
+      if (!itemKey || isNaN(amount)) { replier.reply("사용법: /관리자 전체보상 [아이템] [수량]"); return; }
+
+      var count = 0;
+      var isEquip = !!EQUIP_DB[itemKey]; 
+
+      for (var name in d.users) {
+        var uTarget = d.users[name];
+        normalizeUserData(uTarget); 
+
+        if (itemKey === "골드") uTarget.gold += amount;
+        else if (["도파민","강화권"].includes(itemKey)) uTarget.dopaTicket += amount;
+        else if (["두쫀쿠","쿠키"].includes(itemKey)) uTarget.cookie += amount;
+        else if (["티어리셋","리셋"].includes(itemKey)) uTarget.reroll += amount;
+        else if (["이동티켓","티켓"].includes(itemKey)) uTarget.ticket += amount;
+        else if (itemKey.indexOf("킹갓") !== -1) uTarget.godBall = (uTarget.godBall||0) + amount;
+        else if (isEquip) {
+            uTarget.items[itemKey] = (uTarget.items[itemKey] || 0) + amount;
+        }
+        else { 
+            if (itemKey === "몬스터볼") uTarget.ball += amount;
+            else continue;
+        }
+        count++;
+      }
+      commitSave(true);
+      replier.reply("📢 전체 보상 지급 완료 (" + count + "명)\n내용: " + itemKey + " x" + amount);
+      return;
+    }
+
+    // -------------------- 5. [포켓몬 관리] --------------------
+    if (sub === "스폰" || sub === "스폰예약") {
+       var tName = parts[2]; var pName = parts[3]; var shinyOpt = parts[4];
+       var t = getUserByName(d, tName);
+       if(!t) { replier.reply("유저 없음"); return; }
+       var db = findPokemonDBByName(pName);
+       if(!db) { replier.reply("포켓몬 없음"); return; }
+       t.user.nextSpawnPid = db.id;
+       t.user.nextSpawnShiny = (shinyOpt === "Y" || shinyOpt === "y");
+       commitSave(true);
+       replier.reply("📍 스폰 예약: " + t.name + " -> " + db.name + (t.user.nextSpawnShiny?"(✨)":""));
+       return;
+    }
+
+    if (sub === "포켓몬지급") {
+       var tName = parts[2]; var pName = parts[3];
+       var t = getUserByName(d, tName);
+       if (!t) { replier.reply("유저 없음"); return; }
+       var db = isNaN(parseInt(pName)) ? findPokemonDBByName(pName) : findPokemonDB(pName);
+       if (!db) { replier.reply("포켓몬 없음"); return; }
+       var uid = addPokemonToUser(t.user, db.id);
+       commitSave(true);
+       replier.reply("✅ 포켓몬 지급: " + t.name + " -> " + db.name + " (#" + uid + ")");
+       return;
+    }
+
+    if (sub === "삭제") {
+       var tName = parts[2]; var uid = parseInt((parts[3]||"").replace("#",""), 10);
+       var t = getUserByName(d, tName);
+       if (!t) return;
+       var arr = t.user.pokemons;
+       for(var i=0; i<arr.length; i++) {
+          if (arr[i].uid === uid) {
+             var delName = getDisplayName(arr[i]);
+             arr.splice(i, 1);
+             commitSave(true);
+             replier.reply("🗑️ 삭제 완료: " + t.name + "의 " + delName);
+             return;
+          }
+       }
+       replier.reply("UID 못 찾음");
+       return;
+    }
+
+    // -------------------- 6. [에디트: 잠재력/강화/이로치] --------------------
+    if (sub === "잠재력") {
+       var tName = parts[2]; var uid = parseInt(parts[3], 10);
+       var str = parseInt(parts[4]); var hp = parseInt(parts[5]); var spd = parseInt(parts[6]);
+       var t = getUserByName(d, tName);
+       if(!t || isNaN(str)) { replier.reply("사용법: /관리자 잠재력 [닉] [UID] [힘] [체] [민]"); return; }
+       var p = findUserPokemonByUid(t.user, uid);
+       if(!p) { replier.reply("포켓몬 없음"); return; }
+       p.ivStr = str; p.ivHp = hp; p.ivSpd = spd;
+       // 등급 재계산
+       var score = str + Math.floor(hp/10) + spd;
+       if (score >= 38) p.grade = "S";
+       else if (score >= 28) p.grade = "A";
+       else if (score >= 19) p.grade = "B";
+       else if (score >= 10) p.grade = "C";
+       else p.grade = "D";
+       commitSave(true);
+       replier.reply("💪 잠재력 변경 완료: " + getDisplayName(p) + " (" + p.grade + ")");
+       return;
+    }
+
+    if (sub === "강화") {
+       var tName = parts[2]; var uid = parseInt(parts[3], 10); var val = parseInt(parts[4], 10);
+       var t = getUserByName(d, tName);
+       if(!t) return;
+       var p = findUserPokemonByUid(t.user, uid);
+       if(!p) return;
+       p.enh = val;
+       if(typeof tryAutoEvolveByEnh === "function") tryAutoEvolveByEnh(p);
+       commitSave(true);
+       replier.reply("🛠️ 강화 수치 변경: " + val + "강");
+       return;
+    }
+
+    if (sub === "이로치") {
+       var tName = parts[2]; var uid = parseInt(parts[3], 10);
+       var t = getUserByName(d, tName);
+       if(!t) return;
+       var p = findUserPokemonByUid(t.user, uid);
+       if(!p) { replier.reply("포켓몬 없음"); return; }
+       p.shiny = !p.shiny;
+       commitSave(true);
+       replier.reply("✨ 이로치 상태 변경: " + (p.shiny ? "ON" : "OFF"));
+       return;
+    }
+
+    // -------------------- 7. [서버 관리] --------------------
     if (sub === "공지") {
       var text = msg.replace("/관리자 공지", "").trim();
-      if (!text) { replier.reply("공지 내용을 입력하세요."); return; }
       addAdminLog(d, sender, "공지: " + text);
       commitSave(true);
       replier.reply("📢 [공지사항]\n\n" + text);
       return;
     }
-    if (sub === "저장") {
-      saveData(d);
-      replier.reply("💾 데이터 강제 저장 완료.");
-      return;
-    }
+    
+    if (sub === "저장") { saveData(d); replier.reply("💾 저장 완료"); return; }
+    
     if (sub === "데이터정리") {
-      var res = manageInactiveUsers(d);
-      replier.reply(res);
-      return;
+        var res = manageInactiveUsers(d);
+        replier.reply(res);
+        return;
     }
 
-    // -------------------- [조회] --------------------
-    if (sub === "조회") {
-      var targetName = parts[2];
-      var t = getUserByName(d, targetName);
-      if (!t) { replier.reply("유저를 찾을 수 없습니다."); return; }
-      var uu = t.user;
-      replier.reply("🔎 " + t.name + " 정보\nLv." + uu.trainerLv + " / " + fmtNum(uu.gold) + "💰\n포켓몬: " + (uu.pokemons?uu.pokemons.length:0) + "마리\n가방: 몬" + uu.ball + "/슈" + uu.superBall + "/하" + uu.ultraBall + "/도파민" + uu.dopaTicket);
-      return;
-    }
-
-    // -------------------- [지급] 전체보상 & 개별지급 --------------------
-    if (sub === "전체보상") {
-      var item = parts[2];
-      var amt = parseInt(parts[3], 10);
-      if (!item || isNaN(amt)) { replier.reply("사용법: /관리자 전체보상 [항목] [수량]"); return; }
-      
-      var count = 0;
-      for (var name in d.users) {
-        if (!d.users.hasOwnProperty(name)) continue;
-        var uu = d.users[name];
-        // 지급 로직 매핑
-        if (item === "골드") uu.gold = (uu.gold||0) + amt;
-        else if (item === "도파민" || item === "강화권") uu.dopaTicket = (uu.dopaTicket||0) + amt;
-        else if (item === "두쫀쿠" || item === "쿠키") uu.cookie = (uu.cookie||0) + amt;
-        else if (item === "티어리셋" || item === "리셋") uu.reroll = (uu.reroll||0) + amt;
-        else if (item === "이동티켓" || item === "티켓") uu.ticket = (uu.ticket||0) + amt;
-        else if (item === "킹갓볼" || item.indexOf("킹갓")!==-1) uu.godBall = (uu.godBall||0) + amt;
-        else if (item === "몬스터볼") uu.ball = (uu.ball||0) + amt;
-        else if (item === "슈퍼볼") uu.superBall = (uu.superBall||0) + amt;
-        else if (item === "하이퍼볼") uu.ultraBall = (uu.ultraBall||0) + amt;
-        else { replier.reply("지원하지 않는 항목입니다."); return; }
-        count++;
-      }
-      addAdminLog(d, sender, "전체보상 " + item + " " + amt);
-      commitSave(true);
-      replier.reply("📢 전체보상 지급 완료 (" + count + "명)\n항목: " + item + " +" + amt);
-      return;
-    }
-
-    if (sub === "지급") {
-      var tn = parts[2];
-      var fieldK = parts[3];
-      var amt2 = parseInt(parts[4], 10);
-      var t2 = getUserByName(d, tn);
-      if (!t2) { replier.reply("유저를 찾을 수 없습니다."); return; }
-      if (isNaN(amt2)) { replier.reply("수량을 입력하세요."); return; }
-      
-      var u2 = t2.user;
-      var logName = fieldK;
-
-      if (fieldK === "골드") u2.gold += amt2;
-      else if (fieldK === "경험치") u2.trainerExp += amt2;
-      else if (fieldK === "레벨") u2.trainerLv = Math.max(1, Math.min(99, u2.trainerLv + amt2));
-      
-      // 아이템
-      else if (fieldK === "몬스터볼") { u2.ball = (u2.ball||0)+amt2; }
-      else if (fieldK === "슈퍼볼") { u2.superBall = (u2.superBall||0)+amt2; }
-      else if (fieldK === "하이퍼볼") { u2.ultraBall = (u2.ultraBall||0)+amt2; }
-      else if (fieldK === "킹갓볼" || fieldK.indexOf("킹갓")!==-1) { u2.godBall = (u2.godBall||0)+amt2; logName="킹갓볼"; }
-      
-      else if (fieldK === "도파민" || fieldK === "강화권") { u2.dopaTicket = (u2.dopaTicket||0)+amt2; logName="도파민"; }
-      else if (fieldK === "두쫀쿠" || fieldK === "쿠키") { u2.cookie = (u2.cookie||0)+amt2; logName="두쫀쿠"; }
-      else if (fieldK === "티어리셋" || fieldK === "리셋") { u2.reroll = (u2.reroll||0)+amt2; logName="티어리셋권"; }
-      else if (fieldK === "이동티켓" || fieldK === "티켓") { u2.ticket = (u2.ticket||0)+amt2; logName="이동티켓"; }
-      else { replier.reply("지급 불가 항목입니다."); return; }
-
-      addAdminLog(d, sender, "지급 " + t2.name + " " + logName + " " + amt2);
-      commitSave(true);
-      replier.reply("✅ 지급 완료: " + t2.name + " / " + logName + " +" + amt2);
-      return;
-    }
-
-    if (sub === "설정") { // 기존 설정 기능 (레벨/경험치/골드 직접 세팅)
-       var tn3 = parts[2];
-       var fieldK2 = parts[3];
-       var val2 = parseInt(parts[4], 10);
-       var t3 = getUserByName(d, tn3);
-       if (!t3) { replier.reply("유저 없음"); return; }
-       
-       if (fieldK2 === "레벨") t3.user.trainerLv = val2;
-       else if (fieldK2 === "골드") t3.user.gold = val2;
-       else if (fieldK2 === "경험치") t3.user.trainerExp = val2;
-       else { replier.reply("설정 가능: 레벨/골드/경험치"); return; }
-       
-       commitSave(true);
-       replier.reply("✅ 설정 완료: " + t3.name + " " + fieldK2 + "=" + val2);
-       return;
-    }
-
-    // -------------------- [계정] 이동/초기화 --------------------
-    if (sub === "계정이동" || sub === "닉변") {
+    if (sub === "계정이동") {
       var oldName = parts[2]; var newName = parts[3];
-      if (!oldName || !newName) { replier.reply("사용법: /관리자 계정이동 [구닉] [신닉]"); return; }
-      
-      if (!d.users[oldName]) { replier.reply("구 닉네임 데이터가 없습니다."); return; }
+      if (!d.users[oldName]) { replier.reply("구 닉네임 데이터 없음"); return; }
       d.users[newName] = JSON.parse(JSON.stringify(d.users[oldName]));
       delete d.users[oldName];
-      
       commitSave(true);
       replier.reply("✅ 계정 이동 완료: " + oldName + " -> " + newName);
       return;
@@ -3823,138 +4135,36 @@ function response(room, msg, sender, isGroupChat, replier) {
       return;
     }
 
-    // -------------------- [포켓몬] 관리/지급/삭제/강화 --------------------
-    if (sub === "포켓몬") {
-       var t = getUserByName(d, parts[2]);
-       if (!t) return;
-       var list = t.user.pokemons || [];
-       var out = t.name + " 포켓몬 (" + list.length + "마리)\n";
-       for(var i=0; i<list.length; i++) {
-          var p = list[i];
-          var db = findPokemonDB(p.pid);
-          var nm = db ? db.name : "PID"+p.pid;
-          if(p.shiny) nm = "✨" + nm;
-          out += "#" + p.uid + " " + nm + " (" + (p.enh||0) + "강)\n";
-       }
-       replier.reply(out);
-       return;
+    // [기타] 조회 등
+    if (sub === "조회") {
+      var t = getUserByName(d, parts[2]);
+      if (!t) { replier.reply("유저 없음"); return; }
+      var uInfo = t.user;
+      replier.reply("🔎 " + t.name + "\n골드: " + fmtNum(uInfo.gold) + "\n도파민: " + uInfo.dopaTicket + "\n포켓몬: " + uInfo.pokemons.length);
+      return;
+    }
+    
+    // [설정] 전역설정 등
+    if (sub === "전역조회") { replier.reply(globalConfigText(d)); return; }
+    if (sub === "전역설정") {
+      var key = parts[2]; var val = parseInt(parts[3], 10);
+      if (key && key.indexOf("SHOP_PRICE") !== -1) {
+          if (key === "SHOP_PRICE_BALL") setShopPrice(d, "BALL", val);
+          else if (key === "SHOP_PRICE_SUPER") setShopPrice(d, "SUPER", val);
+          else if (key === "SHOP_PRICE_ULTRA") setShopPrice(d, "ULTRA", val);
+          else if (key === "SHOP_PRICE_DOPA") setShopPrice(d, "DOPA", val);
+          else { replier.reply("알 수 없는 키"); return; }
+      }
+      commitSave(true);
+      replier.reply("✅ 설정 완료: " + key + " = " + val);
+      return;
     }
 
-    if (sub === "포켓몬지급") {
-       var tName = parts[2];
-       var pName = parts[3];
-       var t = getUserByName(d, tName);
-       if (!t) { replier.reply("유저 없음"); return; }
-       
-       var db = isNaN(parseInt(pName)) ? findPokemonDBByName(pName) : findPokemonDB(pName);
-       if (!db) { replier.reply("포켓몬 없음"); return; }
-       
-       var uid = addPokemonToUser(t.user, db.id); // 통합된 함수 사용
-       commitSave(true);
-       replier.reply("✅ 포켓몬 지급 완료: " + t.name + "에게 " + db.name + " (#" + uid + ")");
-       return;
-    }
-
-    if (sub === "포켓몬삭제") {
-       var tName = parts[2];
-       var uid = parseInt((parts[3]||"").replace("#",""), 10);
-       var t = getUserByName(d, tName);
-       if (!t) { replier.reply("유저 없음"); return; }
-       
-       var arr = t.user.pokemons;
-       for(var i=0; i<arr.length; i++) {
-          if (arr[i].uid === uid) {
-             var delName = getDisplayName(arr[i]);
-             arr.splice(i, 1);
-             commitSave(true);
-             replier.reply("🗑️ 삭제 완료: " + t.name + "의 " + delName + " (#" + uid + ")");
-             return;
-          }
-       }
-       replier.reply("해당 UID 포켓몬이 없습니다.");
-       return;
-    }
-
-    if (sub === "강화") { // 강제 강화 설정
-       var tName = parts[2];
-       var uid = parseInt(parts[3], 10);
-       var val = parseInt(parts[4], 10);
-       var t = getUserByName(d, tName);
-       if(!t || isNaN(uid) || isNaN(val)) return;
-       
-       var p = findUserPokemonByUid(t.user, uid);
-       if(!p) { replier.reply("포켓몬 없음"); return; }
-       
-       p.enh = val;
-       if(typeof tryAutoEvolveByEnh === "function") tryAutoEvolveByEnh(p);
-       
-       commitSave(true);
-       replier.reply("🛠️ 강화 수치 변경: #" + uid + " -> " + val + "강");
-       return;
-    }
-
-    // -------------------- [스페셜] 이로치 / 잠재력 / 스폰예약 --------------------
-    if (sub === "이로치") {
-       var tName = parts[2];
-       var uid = parseInt(parts[3], 10);
-       var t = getUserByName(d, tName);
-       if(!t) return;
-       var p = findUserPokemonByUid(t.user, uid);
-       if(!p) { replier.reply("포켓몬 없음"); return; }
-       
-       p.shiny = !p.shiny;
-       commitSave(true);
-       replier.reply("✨ 이로치 상태 변경: " + (p.shiny ? "ON" : "OFF"));
-       return;
-    }
-
-    if (sub === "잠재력") {
-       var tName = parts[2];
-       var uid = parseInt(parts[3], 10);
-       var str = parseInt(parts[4]);
-       var hp = parseInt(parts[5]);
-       var spd = parseInt(parts[6]);
-       
-       var t = getUserByName(d, tName);
-       if(!t || isNaN(str)) { replier.reply("/관리자 잠재력 닉네임 UID 힘 체력 민첩"); return; }
-       var p = findUserPokemonByUid(t.user, uid);
-       if(!p) return;
-       
-       p.ivStr = str; p.ivHp = hp; p.ivSpd = spd;
-       // 등급 재계산
-       var score = str + Math.floor(hp/10) + spd;
-       if (score >= 38) p.grade = "S";
-       else if (score >= 28) p.grade = "A";
-       else if (score >= 19) p.grade = "B";
-       else if (score >= 10) p.grade = "C";
-       else p.grade = "D";
-       
-       commitSave(true);
-       replier.reply("💪 잠재력 변경 완료! (등급: " + p.grade + ")");
-       return;
-    }
-
-    if (sub === "스폰" || sub === "스폰예약") {
-       var tName = parts[2];
-       var pName = parts[3];
-       var shinyOpt = parts[4]; // Y or N
-       
-       var t = getUserByName(d, tName);
-       if(!t) return;
-       var db = findPokemonDBByName(pName);
-       if(!db) { replier.reply("포켓몬 없음"); return; }
-       
-       t.user.nextSpawnPid = db.id;
-       t.user.nextSpawnShiny = (shinyOpt === "Y" || shinyOpt === "y");
-       commitSave(true);
-       replier.reply("📍 스폰 예약: " + t.name + " -> " + db.name + (t.user.nextSpawnShiny?"(✨)":""));
-       return;
-    }
-
-    replier.reply("알 수 없는 명령어입니다. /관리자 도움");
+    replier.reply("알 수 없는 명령어입니다. '/관리자 도움'을 확인하세요.");
     return;
   }
-      // -------------------- [복구 시스템] 아카이브 확인 --------------------
+
+
      // -------------------- [복구 시스템] 아카이브 확인 (수정됨) --------------------
   if (!d.users[sender]) {
     var archivePath = "/sdcard/mbot_pokemon_archive.json"; 
@@ -4008,7 +4218,7 @@ normalizeUserData(u);
     commitSave(true);
   }
 
-// -------------------- [수정됨] /내정보 (획득한 배지만 깔끔하게 표기) --------------------
+// -------------------- [수정됨] /내정보 (다코타 코인 추가) --------------------
   if (msg === "/내정보") {
     ensureUserStats(u);
     // EXP 진행률
@@ -4037,19 +4247,13 @@ normalizeUserData(u);
     }
     var dexRate = (POKEMON_DB.length === 0) ? 0 : Math.floor((uniqueCaught / POKEMON_DB.length) * 1000) / 10;
 
-    // ★ [수정] 획득한 배지만 나열하기 (없으면 "(없음)" 표시)
+    // 배지 목록
     var badgesStr = "";
     if (!u.badges) u.badges = [];
-    
     for (var k = 0; k < GYM_LEADERS.length; k++) {
         var g = GYM_LEADERS[k];
-        // 내가 이 배지를 가지고 있는가?
-        if (u.badges.indexOf(g.badge) !== -1) {
-            badgesStr += g.badge + " "; // 있으면 아이콘 추가
-        }
+        if (u.badges.indexOf(g.badge) !== -1) badgesStr += g.badge + " ";
     }
-    
-    // 배지가 하나도 없으면
     if (badgesStr === "") badgesStr = "(없음)";
 
     var out = "";
@@ -4057,10 +4261,12 @@ normalizeUserData(u);
     out += "Lv." + u.trainerLv + " (" + pctExp + "%)\n";
     out += bar + "  " + cur + "/" + need + " EXP\n\n";
     
-    out += "💰 재화: " + fmtNum(u.gold) + "💰\n";
-    out += "🎒 보유 아이템은 '/내가방'으로 확인하세요.\n\n";
+    // ★ [수정] 재화 정보에 코인 추가
+    out += "[보유 재화]\n";
+    out += "💰 골드: " + fmtNum(u.gold) + "💰\n";
+    out += "🪙 타코타 코인: " + fmtNum(u.dakotaCoin || 0) + "개\n\n";
     
-    out += "🎖️ 배지: " + badgesStr + "\n\n"; // ★ 획득한 것만 나옴
+    out += "🎖️ 배지: " + badgesStr + "\n\n";
     
     out += "🐾 컬렉션\n";
     out += "보유 포켓몬: " + u.pokemons.length + "마리\n";
@@ -4074,6 +4280,22 @@ normalizeUserData(u);
     commitSave(false);
     return;
   }
+
+  // -------------------- [신규] /내지갑 (재화 상태 확인) --------------------
+  if (msg === "/내지갑" || msg === "/지갑" || msg === "/돈") {
+      var coin = u.dakotaCoin || 0;
+      
+      replier.reply(
+          "👛 " + decoName + "님의 지갑\n" +
+          "━━━━━━━━━━━━━━\n" +
+          "💰 골드 : " + fmtNum(u.gold) + "💰\n" +
+          "🪙 다코타 코인 : " + fmtNum(coin) + "개\n" +
+          "━━━━━━━━━━━━━━\n" +
+          "💡 코인은 레이드 보상으로 획득 가능합니다."
+      );
+      return;
+  }
+
   // -------------------- [수정됨] /정보 (아이템 목록 제거) --------------------
   if (msg.indexOf("/정보") === 0) {
     var t = getTargetFromMsg(d, sender, msg, "/정보");
@@ -4132,119 +4354,306 @@ normalizeUserData(u);
     commitSave(false);
     return;
   }
-// -------------------- [신규] 내가방 (인벤토리) --------------------
-// -------------------- [수정됨] 내가방 (티어리셋 적용) --------------------
-    if (msg === "/내가방") {
+  // -------------------- [수정됨] 내가방 (다코타 아이템 섹션 추가) --------------------
+  if (msg === "/내가방") {
     var list = "";
     list += "🔴 몬스터볼: " + fmtNum(u.ball) + "개\n";
     list += "🔵 슈퍼볼: " + fmtNum(u.superBall) + "개\n";
     list += "⚫ 하이퍼볼: " + fmtNum(u.ultraBall) + "개\n";
-    list += "👑 킹갓볼: " + fmtNum(u.godBall || 0) + "개\n"; // ★ 킹갓볼 추가
+    list += "👑 킹갓볼: " + fmtNum(u.godBall || 0) + "개\n"; 
     list += "💳 도파민강화권: " + fmtNum(u.dopaTicket) + "장\n";
     list += "🍪 두쫀쿠(확정강화): " + fmtNum(u.cookie) + "개\n";
     list += "🎫 이동티켓: " + fmtNum(u.ticket) + "장\n";
     list += "🔄 티어리셋권: " + fmtNum(u.reroll) + "장";
 
+    // [신규] 다코타 아이템 목록 (u.items에 있지만 EQUIP_DB에는 없는 것들)
+    var dakotaList = [];
+    var specialItems = ["장비상자", "상자파편", "딸기쿠키", "황금열매", "황금페인트"];
+    
+    // 안전장치
+    if (!u.items) u.items = {};
+
+    if ((u.items["장비상자"]||0) > 0) dakotaList.push("📦 장비상자: " + u.items["장비상자"] + "개");
+    if ((u.items["상자파편"]||0) > 0) dakotaList.push("🧩 상자파편: " + u.items["상자파편"] + "개 (10개 모으면 상자!)");
+    if ((u.items["딸기쿠키"]||0) > 0) dakotaList.push("🍓 딸기쿠키: " + u.items["딸기쿠키"] + "개 (+3강)");
+    if ((u.items["황금열매"]||0) > 0) dakotaList.push("🥜 황금열매: " + u.items["황금열매"] + "개 (잠재력MAX)");
+    if ((u.items["황금페인트"]||0) > 0) dakotaList.push("🎨 황금페인트: " + u.items["황금페인트"] + "개 (이로치)");
+
+    if (dakotaList.length > 0) {
+        list += "\n\n[다코타 보관함]\n" + dakotaList.join("\n");
+    }
+
+    // [기존] 장착 장비 목록 (EQUIP_DB에 있는 것만)
+    var equipList = [];
+    for (var key in u.items) {
+        // 다코타 아이템은 위에서 처리했으니 건너뜀
+        if (specialItems.indexOf(key) !== -1) continue; 
+        
+        if (u.items[key] > 0) {
+            var item = EQUIP_DB[key];
+            if (!item) continue; 
+            
+            var icon = item.icon || "🛡️";
+            var dName = key;
+            if (item.tier === 3) dName = "『" + dName + "』"; // 티어3 강조
+            
+            equipList.push(icon + " " + dName + ": " + u.items[key] + "개");
+        }
+    }
+    
+    if (equipList.length > 0) {
+        list += "\n\n[장비 보관함]\n" + equipList.join("\n");
+    } else {
+        list += "\n\n[장비 보관함]\n(비어있음)";
+    }
+
     replier.reply("🎒 " + sender + "님의 가방\n━━━━━━━━━━━━━━\n" + list);
     return;
   }
-  
-// -------------------- [신규] 아이템 사용 시스템 --------------------
+
+   // ==================================================================
+  // 🎒 [통합] 아이템 사용 시스템 (상자깡 버그 수정판)
+  // ==================================================================
   if (msg.indexOf("/사용") === 0) {
     var parts = msg.split(" ").filter(Boolean);
-    var itemCmd = parts[1]; // 두쫀쿠, 이동, 재설정
+    var itemCmd = parts[1]; 
+    
+    // -----------------------------------------------------------
+    // [A] 다코타의 보물상자 (가챠 & 파편 시스템)
+    // -----------------------------------------------------------
+    if (itemCmd === "상자" || itemCmd === "보물상자" || itemCmd === "장비상자") {
+        var qty = parseInt(parts[2], 10); 
+        if (isNaN(qty)) qty = 1;
+        
+        if (!u.items || !u.items["장비상자"] || u.items["장비상자"] < qty) {
+            replier.reply("🎁 '장비상자'가 부족합니다.\n보유: " + (u.items ? (u.items["장비상자"]||0) : 0) + "개");
+            return;
+        }
 
-   // 1. 두쫀쿠 (확정 +1강)
-    if (itemCmd === "두쫀쿠" || itemCmd === "쿠키") {
-      var uid = parseInt(parts[2], 10);
-      if (!uid) { replier.reply("사용법: /사용 두쫀쿠 [포켓몬UID]\n예: /사용 두쫀쿠 15"); return; }
-      
-      if (!u.cookie || u.cookie <= 0) { replier.reply("🍪 두쫀쿠가 없습니다. 상점에서 구매해주세요."); return; }
-      
-      var p = findUserPokemonByUid(u, uid);
-      if (!p) { replier.reply("해당 포켓몬을 찾을 수 없습니다."); return; }
+        // 상자 차감
+        u.items["장비상자"] -= qty;
+        if (u.items["장비상자"] <= 0) delete u.items["장비상자"];
 
-      if (isPokemonBusy(u, p.uid)) {
-        replier.reply("🚫 해당 포켓몬은 현재 탐험 중입니다.\n돌아올 때까지 기다려주세요.");
+        var resultLog = "";
+        var getItems = {}; 
+        var fragmentCount = 0; 
+
+        // ★ [수정] 티어별 아이템 분류 로직 강화
+        var t1 = [], t2 = [], t3 = [];
+        
+        for (var k in EQUIP_DB) {
+            var item = EQUIP_DB[k];
+            var tier = item.tier || 1;
+
+            // [자동 보정] 'type_boost'(속성구슬)는 2티어로 취급!
+            if (!item.tier && item.type === "type_boost") {
+                tier = 2;
+            }
+
+            if (tier === 3) t3.push(k);
+            else if (tier === 2) t2.push(k);
+            else t1.push(k);
+        }
+
+        // 안전장치: 혹시라도 배열이 비어있으면 1티어로 채움 (에러 방지)
+        if (t2.length === 0) t2 = t1.slice();
+        if (t3.length === 0) t3 = t1.slice();
+
+        // 뽑기 진행
+        for (var i=0; i<qty; i++) {
+            var roll = Math.random(); 
+            var picked = "";
+            var grade = "";
+
+            // ① 전설 (3%)
+            if (roll < BOX_PROB_TIER_3) { 
+                picked = t3[Math.floor(Math.random() * t3.length)];
+                grade = "👑";
+            } 
+            // ② 희귀 (17%)
+            else if (roll < (BOX_PROB_TIER_3 + BOX_PROB_TIER_2)) { 
+                picked = t2[Math.floor(Math.random() * t2.length)];
+                grade = "🔹";
+            } 
+            // ③ 일반 (40%)
+            else if (roll < (BOX_PROB_TIER_3 + BOX_PROB_TIER_2 + BOX_PROB_TIER_1)) { 
+                picked = t1[Math.floor(Math.random() * t1.length)];
+                grade = "⚪";
+            } 
+            // ④ 파편 (나머지 40%)
+            else {
+                fragmentCount++;
+                continue; 
+            }
+            
+            // 아이템 적립
+            getItems[picked] = (getItems[picked] || 0) + 1;
+            resultLog += grade + " " + picked + "\n";
+        }
+
+        // --- 결과 정산 ---
+        for (var key in getItems) {
+            u.items[key] = (u.items[key] || 0) + getItems[key];
+        }
+        
+        var autoBox = 0;
+        if (fragmentCount > 0) {
+            u.items["상자파편"] = (u.items["상자파편"] || 0) + fragmentCount;
+            resultLog += "🧩 상자파편 +" + fragmentCount + "개\n";
+            
+            if (u.items["상자파편"] >= 10) {
+                autoBox = Math.floor(u.items["상자파편"] / 10);
+                u.items["상자파편"] %= 10;
+                u.items["장비상자"] = (u.items["장비상자"] || 0) + autoBox;
+            }
+        }
+
+        commitSave(true);
+        
+        var summary = "🎁 상자 " + qty + "개를 개봉했습니다!\n━━━━━━━━━━━━━━\n" + 
+                      (resultLog || "🧩 파편만 잔뜩 나왔습니다...\n");
+        
+        if (autoBox > 0) {
+            summary += "\n♻️ 파편 10개를 모아 [장비상자 +" + autoBox + "]개를 합성했습니다!";
+        }
+        
+        replier.reply(summary);
         return;
     }
-      // [수정] 30 -> ENHANCE_MAX (100)
-      if (p.enh >= ENHANCE_MAX) { replier.reply("이미 최대 강화(" + ENHANCE_MAX + "강) 상태입니다."); return; }
+
+    // -----------------------------------------------------------
+    // [B] 소모품 아이템 (UID 대상)
+    // -----------------------------------------------------------
+    var targetUid = parseInt(parts[2], 10);
+    
+    // 대상이 필요한 아이템인데 UID가 없으면 안내
+    if (["두쫀쿠","쿠키","이동","티켓","티어리셋","티어","리셋","딸기","딸쫀쿠","열매","황금열매","페인트","황금페인트"].indexOf(itemCmd) !== -1) {
+        if (!targetUid && itemCmd.indexOf("이동") === -1 && itemCmd.indexOf("티켓") === -1) {
+             replier.reply("사용법: /사용 [아이템명] [UID]\n예: /사용 딸기 15"); 
+             return;
+        }
+    }
+
+    // 1. 딸기맛 쫀득 쿠키 (강화 +3)
+    if (itemCmd === "딸기" || itemCmd === "딸쫀쿠" || itemCmd === "딸기쿠키") {
+        if (!u.items || !u.items["딸기쿠키"] || u.items["딸기쿠키"] <= 0) { replier.reply("🍓 '딸쫀쿠'가 없습니다."); return; }
+        
+        var p = findUserPokemonByUid(u, targetUid);
+        if (!p) { replier.reply("해당 포켓몬이 없습니다."); return; }
+        if (isPokemonBusy(u, p.uid)) { replier.reply("탐험 중인 포켓몬입니다."); return; }
+        if (p.enh >= ENHANCE_MAX) { replier.reply("이미 최대 강화입니다."); return; }
+
+        u.items["딸기쿠키"]--;
+        var before = p.enh || 0;
+        var after = Math.min(ENHANCE_MAX, before + 3);
+        p.enh = after;
+
+        commitSave(true);
+        var db = findPokemonDB(p.pid);
+        replier.reply("🍓 냠냠! 딸기맛 쿠키를 먹었습니다.\n\n🔥 초고속 성장! " + (db?db.name:"") + "\n" + before + "강 ➔ " + after + "강 (+3)");
+        return;
+    }
+
+    // 2. 황금 라즈열매 (S등급 + 풀스탯)
+    if (itemCmd === "열매" || itemCmd === "황금열매" || itemCmd === "라즈열매") {
+        if (!u.items || !u.items["황금열매"] || u.items["황금열매"] <= 0) { replier.reply("🥜 '황금열매'가 없습니다."); return; }
+        
+        var p = findUserPokemonByUid(u, targetUid);
+        if (!p) { replier.reply("해당 포켓몬이 없습니다."); return; }
+        if (isPokemonBusy(u, p.uid)) { replier.reply("탐험 중인 포켓몬입니다."); return; }
+        
+        if (p.grade === "S" && p.ivStr === 15 && p.ivHp >= 150 && p.ivSpd === 15) {
+            replier.reply("이미 완벽한 포켓몬입니다."); return;
+        }
+
+        u.items["황금열매"]--;
+        p.grade = "S";
+        p.ivStr = 15;
+        p.ivHp = 150;
+        p.ivSpd = 15;
+        
+        dexCaught(u, p.pid, "S"); 
+
+        commitSave(true);
+        replier.reply("🥜 전설의 열매를 먹였습니다!\n잠재력이 폭발합니다!\n\n👑 등급: [S] 확정\n💪 힘: 15 (MAX)\n❤️ 체력: 15 (MAX)\n⚡ 공속: 15 (MAX)");
+        return;
+    }
+
+    // 3. 황금 페인트 (이로치 변환)
+    if (itemCmd === "페인트" || itemCmd === "황금페인트" || itemCmd === "이로치") {
+        if (!u.items || !u.items["황금페인트"] || u.items["황금페인트"] <= 0) { replier.reply("🎨 '황금페인트'가 없습니다."); return; }
+        
+        var p = findUserPokemonByUid(u, targetUid);
+        if (!p) { replier.reply("해당 포켓몬이 없습니다."); return; }
+        if (isPokemonBusy(u, p.uid)) { replier.reply("탐험 중인 포켓몬입니다."); return; }
+        if (p.shiny) { replier.reply("이미 이로치 포켓몬입니다."); return; }
+
+        u.items["황금페인트"]--;
+        p.shiny = true;
+        
+        ensureUserDex(u);
+        if (u.dex[String(p.pid)]) u.dex[String(p.pid)].hasShiny = true;
+
+        commitSave(true);
+        checkAndNotifyTitles(u, replier);
+        replier.reply("🎨 쓱싹쓱싹... 황금색으로 칠했습니다!\n\n✨ " + getDisplayName(p) + "(으)로 변신 성공!");
+        return;
+    }
+
+    // -----------------------------------------------------------
+    // [C] 기존 소모품 (두쫀쿠, 이동, 티어리셋)
+    // -----------------------------------------------------------
+    
+    // 4. 두쫀쿠 (+1강)
+    if (itemCmd === "두쫀쿠" || itemCmd === "쿠키") {
+      var uid = parseInt(parts[2], 10);
+      if (!u.cookie || u.cookie <= 0) { replier.reply("🍪 두쫀쿠가 없습니다."); return; }
+      var p = findUserPokemonByUid(u, uid);
+      if (!p) { replier.reply("해당 포켓몬이 없습니다."); return; }
+      if (isPokemonBusy(u, p.uid)) { replier.reply("탐험 중입니다."); return; }
+      if (p.enh >= ENHANCE_MAX) { replier.reply("이미 최대 강화입니다."); return; }
 
       u.cookie--;
       p.enh++; 
-
       u.stats.totalCookieUsed = (u.stats.totalCookieUsed || 0) + 1;
 
       commitSave(true);
       checkAndNotifyTitles(u, replier);
-      var db = findPokemonDB(p.pid);
-      replier.reply("🍪 냠냠... 두쫀쿠를 먹었습니다!\n\n✨ " + (db?db.name:"포켓몬") + " 강화 성공!\n🔥 " + (p.enh-1) + "강 → " + p.enh + "강");
+      replier.reply("🍪 냠냠... 두쫀쿠를 먹었습니다!\n🔥 " + (p.enh-1) + "강 ➔ " + p.enh + "강 성공!");
       return;
     }
 
-        // 2. 이동티켓 (지역 이동)
+    // 5. 이동티켓
     if (itemCmd === "이동" || itemCmd === "티켓") {
       var regionName = parts[2];
-      
-      // ★ [수정 1] 갈 수 있는 지역 목록 만들기 ('냥치의 방' 제외)
       var validRegions = [];
       for(var i=0; i<REGIONS.length; i++) {
-        if (REGIONS[i].key !== "냥치의 방") { // 냥치의 방은 목록에서 뺌
-          validRegions.push(REGIONS[i].key);
-        }
+        if (REGIONS[i].key !== "냥치의 방") validRegions.push(REGIONS[i].key);
       }
       
-      if (!regionName) {
-        replier.reply("사용법: /사용 이동 [지역명]\n🎫 갈 수 있는 지역:\n" + validRegions.join(", "));
+      if (!regionName || validRegions.indexOf(regionName) === -1) {
+        replier.reply("🚫 갈 수 없는 지역입니다.\n사용법: /사용 이동 [지역명]\n🎫 가능 지역: " + validRegions.join(", "));
         return;
       }
-      
-      // ★ [수정 2] 냥치의 방 진입 시도 원천 차단
-      if (regionName === "냥치의 방") {
-        replier.reply("🚫 '냥치의 방'은 이동티켓으로 갈 수 없습니다.\n(오직 탐험을 통해서만 우연히 발견할 수 있습니다!)");
-        return;
-      }
-      
-      // 유효한 지역인지 체크 (validRegions 목록에 있는지만 확인)
-      var foundRegion = null;
-      if (validRegions.indexOf(regionName) !== -1) {
-        foundRegion = regionName;
-      }
-      
-      if (!foundRegion) {
-        replier.reply("🚫 존재하지 않는 지역이거나 갈 수 없는 곳입니다.\n🎫 갈 수 있는 지역:\n" + validRegions.join(", "));
-        return;
-      }
-
-      if (!u.ticket || u.ticket <= 0) { replier.reply("🎫 이동티켓이 없습니다. 상점에서 구매해주세요."); return; }
+      if (!u.ticket || u.ticket <= 0) { replier.reply("🎫 이동티켓이 없습니다."); return; }
 
       u.ticket--;
-      u.nextFieldRegion = foundRegion; // 다음 필드 탐색 시 이 지역 확정
+      u.nextFieldRegion = regionName;
       
       commitSave(true);
-      checkAndNotifyTitles(u, replier);
-      replier.reply("🎫 티켓을 사용했습니다!\n\n🚀 다음 '/필드' 탐색 시 [" + foundRegion + "] 지역으로 이동합니다.");
+      replier.reply("🎫 티켓 사용 완료!\n🚀 다음 '/필드' 탐색 시 [" + regionName + "] 지역으로 이동합니다.");
       return;
     }
     
-// 3. 티어리셋권 (등급/IV 랜덤 변경)
+    // 6. 티어리셋권
     if (itemCmd === "티어리셋" || itemCmd === "티어" || itemCmd === "리셋") {
       var uid = parseInt(parts[2], 10);
-      if (!uid) { replier.reply("사용법: /사용 티어리셋 [포켓몬UID]\n예: /사용 티어리셋 50"); return; }
-      
-      if (!u.reroll || u.reroll <= 0) { replier.reply("🔄 티어리셋권이 없습니다. 상점에서 구매해주세요."); return; }
-
+      if (!u.reroll || u.reroll <= 0) { replier.reply("🔄 티어리셋권이 없습니다."); return; }
       var p = findUserPokemonByUid(u, uid);
-      if (!p) { replier.reply("해당 포켓몬을 찾을 수 없습니다."); return; }
-
-if (isPokemonBusy(u, p.uid)) {
-        replier.reply("🚫 해당 포켓몬은 현재 탐험 중입니다.\n돌아올 때까지 기다려주세요.");
-        return;
-    }
+      if (!p) { replier.reply("해당 포켓몬이 없습니다."); return; }
+      if (isPokemonBusy(u, p.uid)) { replier.reply("탐험 중입니다."); return; }
 
       u.reroll--;
-      
       var oldGrade = p.grade || "D";
       var newGrade = generatePokemonGrade(); 
       var newIVs = generateIVsByGrade(newGrade); 
@@ -4255,28 +4664,26 @@ if (isPokemonBusy(u, p.uid)) {
       p.ivSpd = newIVs.spd;
 
       commitSave(true);
-      checkAndNotifyTitles(u, replier);
-      
-      // ★ 이 부분입니다! db.name 대신 getDisplayName(p)를 사용!
       var pShowName = getDisplayName(p); 
-
-      replier.reply(
-        "🔄 티어 리셋 완료!\n" + pShowName + "의 잠재력이 변화했습니다.\n\n" +
-        "기존: [" + oldGrade + "] 등급\n⬇️\n" +
-        "결과: 【 " + newGrade + " 】 등급\n\n" +
-        "📊 변경된 스탯\n" +
-        "⚔️ 힘: " + p.ivStr + "/15\n" +
-        "❤️ 체력: " + Math.floor(p.ivHp/10) + "/15\n" +
-        "⚡ 공속: " + p.ivSpd + "/15"
-      );
+      replier.reply("🔄 리셋 완료! " + pShowName + "\n[" + oldGrade + "] ➔ 【 " + newGrade + " 】 등급으로 변경되었습니다.");
       return;
     }
 
-    replier.reply("사용법:\n/사용 두쫀쿠 [UID]\n/사용 이동 [지역명]\n/사용 티어리셋 [UID]");
+    replier.reply(
+        "📝 [아이템 사용법]\n" +
+        "🎁 상자깡: /사용 상자 [수량]\n" +
+        "🍓 딸쫀쿠: /사용 딸기 [UID]\n" +
+        "🥜 황금열매: /사용 열매 [UID]\n" +
+        "🎨 황금페인트: /사용 페인트 [UID]\n" +
+        "🍪 두쫀쿠: /사용 두쫀쿠 [UID]\n" +
+        "🎫 이동: /사용 이동 [지역명]\n" +
+        "🔄 티어리셋: /사용 리셋 [UID]"
+    );
     return;
   }
+ 
   
-  // -------------------- [수정됨] /내포켓몬 (이로치 표시) --------------------
+  // -------------------- [수정됨] /내포켓몬 (아이콘 적용 Ver.) --------------------
   if (msg === "/내포켓몬") {
     if (!u.pokemons || u.pokemons.length === 0) {
       replier.reply(sender + "님은 보유한 포켓몬이 없습니다.");
@@ -4295,25 +4702,35 @@ if (isPokemonBusy(u, p.uid)) {
       var p = sorted[i];
       var power = calcBattlePower(p);
       
-      // ★ 1. 이로치 별(✨) 붙이기 (이 함수가 있어야 별이 보임!)
       var name = getDisplayName(p); 
-      
       var enh = (p.enh && p.enh > 0) ? (p.enh + "강") : "0강";
       var grade = p.grade || "D";
-      
-      // ★ 2. S등급 왕관(👑) 붙이기
       var gradeStr = "[" + grade + "등급]";
-      if (grade === "S") {
-        gradeStr += " 👑"; 
-      }
+      if (grade === "S") gradeStr += " 👑"; 
       
-      full += (i + 1) + ". #" + p.uid + " " + name + " " + enh + " | 전투력 " + power + " | " + gradeStr + "\n";
+      // ★ 장비 표시 (티어3는 괄호 강조)
+      var equipStr = "";
+      if (p.equip && EQUIP_DB[p.equip]) {
+          var item = EQUIP_DB[p.equip];
+          var icon = item.icon || "🛡️";
+          var pItemName = p.equip;
+          
+          // 티어 3 (네임드) 아이템이면 괄호 씌우기
+          if (item.tier === 3) pItemName = "『" + pItemName + "』";
+          
+          equipStr = " " + icon + "[" + pItemName + "]";
+      }
+
+      
+      full += (i + 1) + ". #" + p.uid + " " + name + " " + enh + " | 전투력 " + power + " | " + gradeStr + equipStr + "\n";
     }
 
     replyFold(replier, summary, full);
     return;
   }
-  // -------------------- [신규] 포켓몬 상세 능력치 확인 --------------------
+
+
+  // -------------------- [수정됨] 포켓몬 상세 능력치 확인 (장비 적용) --------------------
   if (msg.indexOf("/상태") === 0 || msg.indexOf("/능력치") === 0) {
     var parts = msg.split(" ").filter(Boolean);
     if (parts.length < 2) {
@@ -4330,37 +4747,75 @@ if (isPokemonBusy(u, p.uid)) {
     var db = findPokemonDB(p.pid);
     if (!db) return;
 
-    // 1. 등급 및 이로치 이름
+    // 1. 등급 및 이름
     var pName = getDisplayName(p);
     var grade = p.grade || "D";
+    // 등급 표시는 아까 설정하신 스타일에 맞게
     var gradeStr = "【 " + grade + " 등급 】" + (grade === "S" ? " 👑" : "");
 
-    // 2. 실전 스탯 계산 (배틀 로직과 동일하게 적용)
-    // 체력
-    var realHP = calcHP(db, p.enh, p.ivHp || 0);
+    // 2. 장비 정보 확인
+    var equipStr = "(없음)";
+    if (p.equip && EQUIP_DB[p.equip]) {
+        var icon = EQUIP_DB[p.equip].icon || "🛡️";
+        equipStr = icon + " " + p.equip;
+    }
+
+    // 3. 실전 스탯 계산 (장비 효과 반영)
     
-    // 공격력 (배틀 공식 역산)
+    // [체력] calcHP에 p.equip 전달 필수!
+    var realHP = calcHP(db, p.enh, p.ivHp || 0, p.equip);
+    
+    // [공격력] 배틀 공식 역산 + 장비 효과 추가
     var base = db.basePower;
     var enhBonus = 1 + (p.enh * 0.085);
     var ivBonus = 1 + ((p.ivStr || 0) * 0.015);
     var rMul = rarityBattleMul(db.rarity || 2); 
     var sMul = stageBattleMul(db.id).atk;
+    
     var atkVal = base * enhBonus * ivBonus * rMul * sMul;
-    if (p.shiny) atkVal *= 1.1; // 이로치 1.1배
+    
+    if (p.shiny) atkVal *= 1.1; // 이로치 보너스
+
+    // ★ 장비 공격력 보너스 적용
+    if (p.equip && EQUIP_DB[p.equip]) {
+        var eq = EQUIP_DB[p.equip];
+        // 1. 깡공격력 % 증가 (힘의머리띠 등)
+        if (eq.type === "atk_pct") {
+            atkVal *= (1 + eq.val);
+        }
+        // 2. 속성 맞춤 보너스 (불꽃구슬 등) - 내 속성과 맞으면 적용된 수치로 표기
+        if (eq.type === "type_boost") {
+            if (db.type1 === eq.cond || (db.type2 && db.type2 === eq.cond)) {
+                atkVal *= (1 + eq.val);
+            }
+        }
+    }
     var realAtk = Math.floor(atkVal);
+
+    // [스피드] IV + 장비 보너스
+    var realSpd = (p.ivSpd || 0);
+    var spdMsg = "";
+    if (p.equip && EQUIP_DB[p.equip]) {
+        var eq = EQUIP_DB[p.equip];
+        if (eq.type === "spd_flat") {
+            realSpd += eq.val;
+            spdMsg = " (+" + eq.val + " 템)";
+        }
+    }
 
     // 4. 출력 메시지 구성
     var out = blockTitle("포켓몬 상세 정보");
     out += "👾 " + pName + " (UID: #" + p.uid + ")\n\n";
     out += "🔥 강화: " + (p.enh || 0) + "강\n";
     out += "📊 등급: " + gradeStr + "\n";
+    out += "🛡️ 장비: " + equipStr + "\n";
     out += "━━━━━━━━━━━━━━\n";
-    out += "[실전 능력치]\n";
+    out += "[실전 능력치 (장비 반영)]\n";
     out += "❤️ 체력 (HP) : " + fmtNum(realHP) + "\n";
     out += "⚔️ 공격력 (ATK) : " + fmtNum(realAtk) + "\n";
-    out += "⚡ 스피드 (IV) : " + (p.ivSpd || 0) + " (선공 확률↑)\n";
+    out += "⚡ 스피드 (Total) : " + realSpd + spdMsg + "\n";
     out += "━━━━━━━━━━━━━━\n";
-    out += "[잠재력 (IV)]\n";
+    out += "[잠재력 (IV) - 순수 스탯]\n";
     out += "💪 힘 : " + (p.ivStr||0) + " / 15\n";
     out += "❤️ 맷집 : " + Math.floor((p.ivHp||0)/10) + " / 15\n";
     out += "🦶 민첩 : " + (p.ivSpd||0) + " / 15\n";
@@ -4369,6 +4824,7 @@ if (isPokemonBusy(u, p.uid)) {
     replier.reply(out);
     return;
   }
+
 
 // -------------------- /판매 하위 N (탐험 보호 적용) --------------------
 if (msg.indexOf("/판매 하위") === 0) {
@@ -4599,54 +5055,253 @@ if (msg.indexOf("/판매") === 0) {
     return;
   }
 
-  // 4. 명령어: /설명 (상세 가이드)
+  // 4. 명령어: /설명 (시스템 가이드 + 장비 도감 통합)
   if (msg.indexOf("/설명") === 0) {
     var keyword = msg.replace("/설명", "").trim();
     
+    // [A] 키워드 없이 입력 시 안내
     if (!keyword) {
       var keys = Object.keys(GUIDE_MAP).join(", ");
-      replier.reply("📖 궁금한 내용을 입력해주세요.\n사용법: /설명 [주제]\n\n[확인 가능 주제]\n" + keys);
+      replier.reply(
+        "📖 죠봇 백과사전\n\n" +
+        "사용법: /설명 [검색어]\n" +
+        "예: /설명 잠재력, /설명 힘의머리띠\n\n" +
+        "📚 [시스템 가이드]\n" + keys + "\n\n" +
+        "🛡️ [장비 도감]\n" +
+        "'/설명 장비'를 입력하면 모든 장비 목록과 효과를 볼 수 있습니다."
+      );
       return;
     }
 
-    var content = GUIDE_MAP[keyword];
-    if (content) {
-      replier.reply(content);
-    } else {
-      replier.reply("❓ '" + keyword + "'에 대한 설명이 없습니다.\n\n[가능한 주제]\n" + Object.keys(GUIDE_MAP).join(", "));
+    // [B] '장비' 검색 시 -> 전체 리스트 출력 (도감 모드)
+    if (keyword === "장비" || keyword === "장비목록" || keyword === "아이템") {
+        var summary = "🛡️ 전체 장비 아이템 목록\n━━━━━━━━━━━━━━\n";
+        var full = "\n[장비 아이템 효과 총정리]\n\n";
+        
+        // 티어별 구분을 위해 순회
+        for (var key in EQUIP_DB) {
+            var item = EQUIP_DB[key];
+            var icon = item.icon || "▪️";
+            full += icon + " " + key + "\n   └ " + item.desc + "\n\n";
+        }
+        
+        replyFold(replier, summary + "전체보기로 상세 효과를 확인하세요.", full);
+        return;
     }
+
+    // [C] 시스템 가이드 (GUIDE_MAP) 확인
+    if (GUIDE_MAP[keyword]) {
+      replier.reply(GUIDE_MAP[keyword]);
+      return;
+    }
+
+    // [D] 장비 아이템 (EQUIP_DB) 개별 검색 확인
+    if (EQUIP_DB[keyword]) {
+      var item = EQUIP_DB[keyword];
+      var icon = item.icon || "🛡️";
+      
+      // 추가 설명(TMI) 생성
+      var detail = "";
+      if (item.type === "atk_pct") detail = "딜러용 최고의 아이템입니다. 깡공격력을 증폭시킵니다.";
+      else if (item.type === "hp_flat") detail = "체력이 낮은 포켓몬이나 탱커에게 아주 좋습니다.";
+      else if (item.type === "spd_flat") detail = "선공을 잡기 유리해집니다. 속도는 배틀의 생명!";
+      else if (item.type === "def_pct") detail = "받는 데미지를 줄여 생존력을 높입니다.";
+      else if (item.type === "type_boost") detail = "해당 속성을 가진 포켓몬이 착용하면 기술 위력이 강해집니다.";
+
+      replier.reply(
+          "🛡️ [장비 상세 정보]\n\n" +
+          icon + " " + keyword + "\n" +
+          "━━━━━━━━━━━━━━\n" +
+          "📝 효과: " + item.desc + "\n" +
+          "💡 팁: " + detail
+      );
+      return;
+    }
+
+    // [E] 검색 실패
+    replier.reply("❓ '" + keyword + "'에 대한 정보를 찾을 수 없습니다.\n시스템 가이드나 정확한 장비 이름을 입력해주세요.\n(전체 목록: /설명 장비)");
     return;
   }
 
+
+   // -------------------- [장비] 장착 및 해제 --------------------
+  if (msg.indexOf("/장착") === 0) {
+      var parts = msg.split(" ").filter(Boolean);
+      var uid = parseInt(parts[1]);
+      var itemName = parts[2]; 
+
+      if (isNaN(uid) || !itemName) {
+          replier.reply("사용법: /장착 [UID] [아이템명]\n예: /장착 15 힘의머리띠");
+          return;
+      }
+
+      var p = findUserPokemonByUid(u, uid);
+      if (!p) { replier.reply("해당 포켓몬이 없습니다."); return; }
+      if (isPokemonBusy(u, p.uid)) { replier.reply("탐험 중인 포켓몬은 장비를 변경할 수 없습니다."); return; }
+
+      if (!u.items || !u.items[itemName] || u.items[itemName] <= 0) {
+          replier.reply("🎒 가방에 '" + itemName + "' 아이템이 없습니다.");
+          return;
+      }
+      
+      if (!EQUIP_DB[itemName]) { replier.reply("🚫 착용할 수 없는 아이템입니다."); return; }
+
+      // 교체 로직
+      if (p.equip) {
+          u.items[p.equip] = (u.items[p.equip] || 0) + 1; // 기존 장비 해제
+      }
+
+      u.items[itemName]--; 
+      p.equip = itemName;
+
+      commitSave(true);
+      replier.reply("🦾 " + getDisplayName(p) + "에게 [" + itemName + "] 장착 완료!\n효과: " + EQUIP_DB[itemName].desc);
+      return;
+  }
+
+  if (msg.indexOf("/해제") === 0) {
+      var uid = parseInt(msg.split(" ")[1]);
+      var p = findUserPokemonByUid(u, uid);
+      if (!p) return;
+      if (isPokemonBusy(u, p.uid)) { replier.reply("탐험 중인 포켓몬은 장비를 변경할 수 없습니다."); return; }
+
+      if (!p.equip) { replier.reply("장착 중인 아이템이 없습니다."); return; }
+
+      if (!u.items) u.items = {};
+      u.items[p.equip] = (u.items[p.equip] || 0) + 1; 
+      var old = p.equip;
+      p.equip = null;
+
+      commitSave(true);
+      replier.reply("🎒 " + getDisplayName(p) + "의 [" + old + "] 장비를 해제했습니다.");
+      return;
+  }
  
 
+  // ==================================================================
+  // 🏪 [상점 시스템] 골드 상점 & 다코타 암시장 & 통합 구매
+  // ==================================================================
+
+  // 1. 골드 상점 목록 (기존 유지)
   if (msg === "/상점") {
     replier.reply(shopText(d, u, sender));
     return;
   }
+
+  // 2. 다코타 암시장 목록 (코인 상점)
+  if (msg === "/다코타상점" || msg === "/코인상점" || msg === "/암시장") {
+      var coin = u.dakotaCoin || 0;
+      replier.reply(
+          "🏰 [다코타 상점]\n" +
+          "\"어서 오게... 코인만 있다면 무엇이든 팔지.\"\n\n" +
+          "🪙 내 코인: " + fmtNum(coin) + "개\n" +
+          "━━━━━━━━━━━━━━\n" +
+          "📦 1. 장비상자 : " + DAKOTA_PRICE_BOX + "코인\n" +
+          "   └ 장비 or 파편 획득 (5% 전설!)\n\n" +
+          "🍓 2. 딸쫀쿠 : " + DAKOTA_PRICE_DDAL + "코인\n" +
+          "   └ [강화 +3] 상승 (실패 없음)\n\n" +
+          "🥜 3. 황금열매 : " + DAKOTA_PRICE_NUT + "코인\n" +
+          "   └ 잠재력 MAX & S등급 확정\n\n" +
+          "🎨 4. 황금페인트 : " + DAKOTA_PRICE_PAINT + "코인\n" +
+          "   └ 일반 포켓몬을 [✨이로치]로 변환\n" +
+          "━━━━━━━━━━━━━━\n" +
+          "🛒 구매 방법 (통합)\n" +
+          "/구매 상자 1\n" +
+          "/구매 딸기 1\n" +
+          "/구매 페인트 1"
+      );
+      return;
+  }
+
+  // 3. [통합] 구매 시스템 (골드/코인 자동 감지)
   if (msg.indexOf("/구매") === 0) {
     var parts = msg.split(" ").filter(Boolean);
+    
+    // 입력값 부족 시 안내
     if (parts.length < 2) {
-      replier.reply("사용법: /구매 몬스터볼 5");
+      replier.reply(
+          "🛒 [상점 구매 가이드]\n" +
+          "사용법: /구매 [아이템명] [수량]\n\n" +
+          "💰 [골드 상품] 몬스터볼, 도파민, 킹갓볼...\n" +
+          "🪙 [코인 상품] 상자, 딸쫀쿠, 페인트, 열매...\n\n" +
+          "예: /구매 몬스터볼 10\n" +
+          "예: /구매 상자 5"
+      );
       return;
     }
-    var item = parts[1];
+
+    var item = parts[1]; // 아이템 이름
     var qty = 1;
     if (parts.length >= 3) {
       qty = parseInt(parts[2], 10);
-      if (isNaN(qty)) 
-        qty = 1;
+      if (isNaN(qty)) qty = 1;
     }
+    qty = Math.max(1, Math.min(999, qty)); // 한 번에 최대 999개 제한
+
+    // -------------------------------------------------------
+    // [A] 다코타 암시장 물품 (코인 자동 감지)
+    // -------------------------------------------------------
+    var dakotaPrice = 0;
+    var dakotaRealName = "";
+    var isDakotaItem = false;
+
+    // 코인 아이템인지 이름으로 체크
+    if (item === "상자" || item === "보물상자" || item === "장비상자") { 
+        dakotaPrice = DAKOTA_PRICE_BOX; dakotaRealName = "장비상자"; isDakotaItem = true; 
+    }
+    else if (item === "딸기" || item === "딸쫀쿠" || item === "딸기쿠키") { 
+        dakotaPrice = DAKOTA_PRICE_DDAL; dakotaRealName = "딸쫀쿠"; isDakotaItem = true; 
+    }
+    else if (item === "열매" || item === "황금열매" || item === "라즈열매") { 
+        dakotaPrice = DAKOTA_PRICE_NUT; dakotaRealName = "황금열매"; isDakotaItem = true; 
+    }
+    else if (item === "페인트" || item === "황금페인트" || item === "이로치") { 
+        dakotaPrice = DAKOTA_PRICE_PAINT; dakotaRealName = "황금페인트"; isDakotaItem = true; 
+    }
+
+    // ★ 다코타 아이템이면 -> 코인 결제 로직 실행
+    if (isDakotaItem) {
+        var totalCoin = dakotaPrice * qty;
+        var myCoin = u.dakotaCoin || 0;
+
+        if (myCoin < totalCoin) {
+            replier.reply("🪙 다코타 코인이 부족합니다.\n필요: " + fmtNum(totalCoin) + "개 / 보유: " + fmtNum(myCoin) + "개");
+            return;
+        }
+
+        // 코인 차감 및 아이템 지급
+        u.dakotaCoin -= totalCoin;
+        
+        if (!u.items) u.items = {};
+        u.items[dakotaRealName] = (u.items[dakotaRealName] || 0) + qty;
+
+        commitSave(true);
+        replier.reply(
+            "🛒 [다코타] 구매 완료!\n" +
+            "📦 " + dakotaRealName + " x" + qty + "개\n" +
+            "🪙 잔액: " + fmtNum(u.dakotaCoin) + "코인\n" +
+            "(사용법: /사용 " + item + " [수량/UID])"
+        );
+        return;
+    }
+
+    // -------------------------------------------------------
+    // [B] 일반 상점 물품 (골드 결제) - 기존 함수 연결
+    // -------------------------------------------------------
+    // 다코타 아이템이 아니면 일반 골드 아이템으로 간주하고 처리
     var rBuy = buyItem(d, u, sender, item, qty, replier);
+    
     if (rBuy.ok) {
       commitSave(true);
       checkAndNotifyTitles(u, replier);
       replier.reply(rBuy.msg);
     } else {
+      // 구매 실패 사유 출력 (돈 부족, 없는 아이템 등)
       replier.reply(rBuy.reason);
     }
     return;
   }
+
 // -------------------- [최종 통합] /필드 (지역 자동 매칭 + 관리자 예약) --------------------
   if (msg === "/필드") {
     // 1. 중복 스폰 및 쿨타임 체크 (기존 유지)
@@ -4768,7 +5423,7 @@ if (msg.indexOf("/판매") === 0) {
     return;
   }
    
-// [복구 완료] 포획 담당 함수
+// [수정됨] 포획 담당 함수 (장비 드랍 및 안전장치 적용 완료)
 function handleCatch(ballType, ballName, decoName, replier) {
   var wild = getWild(d, room);
   
@@ -4803,45 +5458,70 @@ function handleCatch(ballType, ballName, decoName, replier) {
 
   var db = findPokemonDB(wild.pid);
 
-// 성공 시
+  // -------------------- [성공 시] --------------------
   if (t.success) {
     clearWild(d, room); 
     
-    // ★ 복구된 addPokemonToUser 사용 (이로치 전달)
+    // 포켓몬 저장
     var uid = addPokemonToUser(u, wild.pid, wild.isShiny); 
     
-    // 🎒 [신규] 소지품 발견 (Held Item) 로직 추가
+    // ==================================================================
+    // 🎒 [업데이트] 소지품 발견 (장비 포함 & 가독성 강화)
+    // ==================================================================
     var heldItemMsg = "";
     var lootRoll = Math.random(); // 0.0 ~ 1.0
 
-    // 🎁 15% 확률로 아이템 발견!
-    if (lootRoll < 0.10) { 
-      var itemRoll = Math.random();
-        // [확률 테이블] (순서: 극악 확률 -> 흔한 확률 순으로 체크)
-        if (itemRoll < 0.001) { // 0.1% : 킹갓볼 (1억 잭팟 👑)
+    // 15% 확률로 포켓몬이 아이템을 지니고 있음
+    if (lootRoll < 0.15) { 
+        var itemRoll = Math.random();
+        
+        // [확률 테이블] (희귀한 순서대로 검사)
+        
+        // 1. 킹갓볼 (0.3%)
+        if (itemRoll < 0.003) { 
             u.godBall = (u.godBall || 0) + 1;
-            // 획득 시 눈에 확 띄게!
-            heldItemMsg = "\n👑 [전/서/버/급/운/빨] 야생에서 1억짜리 [킹갓볼]을 발견했습니다!!!";
+            heldItemMsg = "\n👑 [대박] 이 녀석... 전설의 [킹갓볼]을 숨기고 있었군요! (+1개)";
         }
-        else if (itemRoll < 0.03) { // ~3.0% : 두쫀쿠 (매우 희귀 🍪)
+        // 2. 장비 아이템 (약 1.2%)
+        else if (itemRoll < 0.005) { 
+            var dropList = [
+                "힘의머리띠", "자뭉열매", "구애스카프", "방어보석", 
+                "불꽃구슬", "물방울구슬", "기적의씨", "자석", "녹지않는얼음", "부드러운모래", "날카로운부리", "용의이빨", "검은안경"
+            ];
+            var dropItem = dropList[Math.floor(Math.random() * dropList.length)];
+            
+            // 가방 안전 생성
+            if (!u.items) u.items = {};
+            u.items[dropItem] = (u.items[dropItem] || 0) + 1;
+            
+            // ★ 아이콘 불러와서 메시지에 넣기
+            var icon = (EQUIP_DB[dropItem] && EQUIP_DB[dropItem].icon) ? EQUIP_DB[dropItem].icon : "💎";
+            heldItemMsg = "\n" + icon + " [득템] 녀석이 지니고 있던 [" + dropItem + "]을(를) 뺏었습니다! (+1개)";
+        }
+        // 3. 두쫀쿠 (약 4% / ~0.055 구간)
+        else if (itemRoll < 0.065) { 
             u.cookie = (u.cookie || 0) + 1;
-            heldItemMsg = "\n🍪 달콤한 냄새... [두쫀쿠]를 숨기고 있었군요!";
+            heldItemMsg = "\n🍪 [발견] 주머니에서 달콤한 [두쫀쿠]가 나왔습니다! (+1개)";
         }
-        else if (itemRoll < 0.02) { // ~2.0% : 티어리셋권 (희귀 🔄) - 기존 5% 유지
+        // 4. 티어리셋권 (약 10% / ~0.155 구간)
+        else if (itemRoll < 0.155) { 
             u.reroll = (u.reroll || 0) + 1;
-            heldItemMsg = "\n🔄 기적! [티어리셋권]을 발견했습니다!";
+            heldItemMsg = "\n🔄 [획득] 오! 이 포켓몬, [티어리셋권]을 가지고 있었네요! (+1장)";
         }
-        else if (itemRoll < 0.20) { // ~20% : 도파민강화권 (고급 💳)
+        // 5. 도파민강화권 (약 20% / ~0.355 구간)
+        else if (itemRoll < 0.355) { 
             u.dopaTicket = (u.dopaTicket || 0) + 1;
-            heldItemMsg = "\n💳 대박! [도파민강화권]을 챙겼습니다!";
+            heldItemMsg = "\n💳 [획득] 녀석의 품에서 [도파민강화권]을 챙겼습니다! (+1장)";
         }
-        else if (itemRoll < 0.60) { // ~60% : 이동티켓 (흔함 🎫)
+        // 6. 이동티켓 (약 35% / ~0.70 구간)
+        else if (itemRoll < 0.70) { 
             u.ticket = (u.ticket || 0) + 1;
-            heldItemMsg = "\n🎁 앗! 포켓몬이 [이동티켓]을 들고 있었어요!";
+            heldItemMsg = "\n🎫 [획득] 여행을 좋아하나 봐요. [이동티켓]을 압수했습니다. (+1장)";
         } 
-        else { // 나머지(40%) : 몬스터볼 페이백 (🔴)
+        // 7. 몬스터볼 (나머지 30%)
+        else { 
             u.ball = (u.ball || 0) + 1;
-            heldItemMsg = "\n🎁 오! 몬스터볼을 주웠습니다!";
+            heldItemMsg = "\n🔴 [줍줍] 바닥에 떨어진 몬스터볼을 다시 회수했습니다. (+1개)";
         }
     }
     // ==================================================================
@@ -4873,14 +5553,14 @@ function handleCatch(ballType, ballName, decoName, replier) {
       "━━━━━━━━━━━━━━\n" +
       "🧬 내 포켓몬 ID #" + uid + "\n" +
       "💰 보상: +" + fmtNum(reward.totalGold) + "💰 / +" + reward.totalExp + "EXP\n" +
-      heldItemMsg + // ★ 여기에 발견 메시지 추가!
-      "\n" + pick(CATCH_SUCCESS_LINES); 
+      heldItemMsg + 
+      "\n\n" + pick(CATCH_SUCCESS_LINES); 
 
     replier.reply(catchResultMsg); 
     return; 
   }
   
-  // 실패 시
+  // -------------------- [실패 시] --------------------
   wild.attempts++; 
   var leftTry = Math.max(0, wild.maxAttempts - wild.attempts);
   var escapePressure = 0; 
@@ -4900,17 +5580,17 @@ function handleCatch(ballType, ballName, decoName, replier) {
   return; 
 }
 
-    // 🎯 포획 명령어 구역
-  if (msg === "/몬스터볼" || msg === "/몬" || msg === "/ㅁ") { handleCatch(0, "몬스터볼", decoName, replier); return; }
-  if (msg === "/슈퍼볼" || msg === "/슈" || msg === "/ㅅ") { handleCatch(1, "슈퍼볼", decoName, replier); return; }
-  if (msg === "/하이퍼볼" || msg === "/하" || msg === "/ㅎ") { handleCatch(2, "하이퍼볼", decoName, replier); return; }
+// 🎯 포획 명령어 구역
+if (msg === "/몬스터볼" || msg === "/몬" || msg === "/ㅁ") { handleCatch(0, "몬스터볼", decoName, replier); return; }
+if (msg === "/슈퍼볼" || msg === "/슈" || msg === "/ㅅ") { handleCatch(1, "슈퍼볼", decoName, replier); return; }
+if (msg === "/하이퍼볼" || msg === "/하" || msg === "/ㅎ") { handleCatch(2, "하이퍼볼", decoName, replier); return; }
 
-  // ★ 전설의 랄부볼 명령어 (풀네임 아니면 발동 안함)
-  if (msg === "/슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커평범한용태는미친사람갓민수랄부볼") { 
-    handleCatch(3, "슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커평범한용태는미친사람갓민수랄부볼", decoName, replier); 
-    return; 
-  }
-  
+// ★ 전설의 랄부볼 명령어 (풀네임 아니면 발동 안함)
+if (msg === "/슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커평범한용태는미친사람갓민수랄부볼") { 
+  handleCatch(3, "슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커평범한용태는미친사람갓민수랄부볼", decoName, replier); 
+  return; 
+}
+
 // -------------------- [수정됨] 칭호 시스템 (평범하게 미친 추가 완료) --------------------
   if (msg.indexOf("/칭호") === 0) {
     updateTitles(u); 
@@ -5167,11 +5847,8 @@ function handleCatch(ballType, ballName, decoName, replier) {
     return;
   }
 
-  
-  
-
   // ==================================================================
-  // 🧭 [탐험 시스템 v2.3] 대모험 & 보상 리밸런싱 (압축 & 혜자)
+  // 🧭 [탐험 시스템 v2.3] 대모험 & 보상 리밸런싱 (수정완료: 오류 해결)
   // ==================================================================
 
   // 1. 탐험 취소 (실수 방지용)
@@ -5253,31 +5930,32 @@ function handleCatch(ballType, ballName, decoName, replier) {
       var itemLog = "";
       
       for(var i=0; i<lootCount; i++) {
-          var rnd = Math.random();
+          // 🔥 [수정] 변수명을 rnd -> rVal로 변경하여 글로벌 함수 충돌 해결!
+          var rVal = Math.random();
           
-          // [확률 테이블] 슬롯 감소 보정 + 대량 지급
-          if (rnd < 0.0005) { // 0.05%
+          // [확률 테이블]
+          if (rVal < 0.0005) { // 0.05%
               u.godBall++; itemLog += "👑 슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커평범한용태는미친사람갓민수랄부볼 +1 (초대박!!)\n"; 
           }
-          else if (rnd < 0.08) { // 8% (티어리셋 상향)
+          else if (rVal < 0.08) { // 8% (티어리셋 상향)
               u.reroll++; itemLog += "🔄 티어리셋권 +1 (대박!!)\n"; 
           }
-          else if (rnd < 0.15) { // 12%
+          else if (rVal < 0.15) { // 12%
               u.cookie++; itemLog += "🍪 두쫀쿠 +1\n"; 
           }
-          else if (rnd < 0.30) { // 15%
+          else if (rVal < 0.30) { // 15%
               u.dopaTicket++; itemLog += "💳 도파민강화권 +1\n"; 
           }
-          else if (rnd < 0.45) { // 15%
+          else if (rVal < 0.45) { // 15%
               // 티켓 가끔 2장
               var tAmt = (Math.random() < 0.3) ? 2 : 1;
               u.ticket += tAmt; itemLog += "🎫 이동티켓 +" + tAmt + "\n"; 
           }
-          else if (rnd < 0.65) { // 하이퍼볼 (5~15개)
+          else if (rVal < 0.65) { // 하이퍼볼 (5~15개)
               var amt = randInt(5, 15);
               u.ultraBall += amt; itemLog += "⚫ 하이퍼볼 +" + amt + "\n";
           }
-          else if (rnd < 0.85) { // 슈퍼볼 (15~30개)
+          else if (rVal < 0.85) { // 슈퍼볼 (15~30개)
               var amt = randInt(15, 30);
               u.superBall += amt; itemLog += "🔵 슈퍼볼 +" + amt + "\n";
           }
@@ -5378,10 +6056,8 @@ function handleCatch(ballType, ballName, decoName, replier) {
       "(탐험 중에는 해당 포켓몬을 사용할 수 없습니다.)"
     );
     return;
-  }
+ }
 
-
-  
   if (msg === "/전적") {
     ensureUserStats(u);
     var total = u.stats.battleWin + u.stats.battleLose + u.stats.battleDraw;
@@ -5484,7 +6160,7 @@ if (isPokemonBusy(u, p.uid)) {
   }
 
 
- // -------------------- [수정됨] 출석 체크 (챔피언 연금 추가) --------------------
+  // -------------------- [수정됨] 출석 체크 (챔피언 연금 상향: 킹갓볼 + 코인 300개) --------------------
   if (msg === "/출석" || msg === "/출석체크") {
     var r = doAttendanceCheck(u, sender);
     
@@ -5492,11 +6168,12 @@ if (isPokemonBusy(u, p.uid)) {
     if (r.ok) {
         // 현재 챔피언이 나(sender)이고, NPC가 아니라면?
         if (d.champion && d.champion.name === sender && !d.champion.isNpc) {
+            // 1. 킹갓볼 1개
             u.godBall = (u.godBall || 0) + 1;
+            // 2. 다코타 코인 300개 (신규)
+            u.dakotaCoin = (u.dakotaCoin || 0) + 300;
             
-            // 통계에도 구매한 것처럼(획득한 것으로) 쳐줄지, 그냥 가방만 늘릴지 결정
-            // 여기선 가방만 늘리고 메시지 추가
-            r.msg += "\n\n👑 [챔피언 특전]\n서버의 지배자에게 '킹갓볼 1개'가 상납되었습니다.";
+            r.msg += "\n\n👑 [챔피언 특전]\n서버의 지배자에게 조공이 도착했습니다.\n🎁 킹갓볼 +1개\n🪙 다코타 코인 +300개";
         }
     }
 
@@ -5504,6 +6181,7 @@ if (isPokemonBusy(u, p.uid)) {
     replier.reply(r.msg);
     return;
   }
+
   // -------------------- [수정됨] 도파민 시스템 (인생 역전 패치) --------------------
   if (msg.indexOf("/도파민") === 0) {
     var spD = msg.split(" ");
@@ -6058,7 +6736,7 @@ if (isPokemonBusy(u, tradeP.uid)) {
     return;
   }
 
-  // 3. 아이템 선물 (교환 명령어에서 분리됨)
+  // 3. 아이템 선물 (장비 포함 통합 버전)
   if (msg.indexOf("/선물") === 0) {
     if (TRANSACTION_LOCK[sender]) { return; }
     TRANSACTION_LOCK[sender] = true;
@@ -6066,7 +6744,7 @@ if (isPokemonBusy(u, tradeP.uid)) {
     try {
       var parts = msg.split(" ").filter(Boolean);
       if (parts.length < 4) {
-        replier.reply("🎁 사용법: /선물 [받을사람] [아이템] [수량]\n예: /선물 손사장 두쫀쿠 1");
+        replier.reply("🎁 사용법: /선물 [받을사람] [아이템] [수량]\n예: /선물 손사장 두쫀쿠 1\n예: /선물 손사장 힘의머리띠 1");
         delete TRANSACTION_LOCK[sender]; return;
       }
 
@@ -6074,37 +6752,68 @@ if (isPokemonBusy(u, tradeP.uid)) {
       var itemName = parts[2];
       var qty = parseInt(parts[3], 10);
 
-      if (targetName === sender) { replier.reply("🚫 본인에게 선물 불가."); delete TRANSACTION_LOCK[sender]; return; }
+      if (targetName === sender) { replier.reply("🚫 본인에게 선물할 수 없습니다."); delete TRANSACTION_LOCK[sender]; return; }
       if (isNaN(qty) || qty <= 0) { replier.reply("🚫 1개 이상 보내세요."); delete TRANSACTION_LOCK[sender]; return; }
 
       var targetU = d.users[targetName];
       if (!targetU) { replier.reply("🚫 대상을 찾을 수 없습니다."); delete TRANSACTION_LOCK[sender]; return; }
       
-      normalizeUserData(targetU);
+      normalizeUserData(targetU); // 받는 사람 가방 초기화
 
-      // 아이템 매핑
+      // 변수 설정
+      var isEquip = false; // 장비 아이템인가?
       var field = "";
       var label = "";
+
+      // [1] 소비 아이템 확인
       if (itemName === "도파민" || itemName === "도파민강화권") { field = "dopaTicket"; label = "도파민강화권"; }
       else if (itemName === "두쫀쿠" || itemName === "쿠키") { field = "cookie"; label = "두쫀쿠"; }
       else if (itemName === "티어리셋" || itemName === "티어리셋권") { field = "reroll"; label = "티어리셋권"; }
       else if (itemName === "이동티켓" || itemName === "티켓") { field = "ticket"; label = "이동티켓"; }
       else if (itemName.indexOf("킹갓볼") !== -1) { field = "godBall"; label = "킹갓볼"; }
+      
+      // [2] 장비 아이템 확인 (EQUIP_DB에 있는지 체크)
+      else if (EQUIP_DB[itemName]) {
+          isEquip = true;
+          field = itemName; // 장비는 이름 그대로가 키값
+          var icon = EQUIP_DB[itemName].icon || "🛡️";
+          label = icon + " " + itemName;
+      }
       else {
-        replier.reply("🚫 선물 불가 아이템입니다.\n(가능: 도파민, 두쫀쿠, 티어리셋, 이동티켓, 킹갓볼)");
+        replier.reply("🚫 선물할 수 없는 아이템입니다.\n(소비템 또는 정확한 장비 이름을 입력해주세요!)");
         delete TRANSACTION_LOCK[sender]; return;
       }
 
-      var myQty = u[field] || 0;
-      if (myQty < qty) {
-        replier.reply("🚫 수량이 부족합니다.\n보유: " + fmtNum(myQty) + "개");
-        delete TRANSACTION_LOCK[sender]; return;
-      }
+      // [3] 아이템 차감 및 전송 로직
+      if (isEquip) {
+          // --- 장비 전송 로직 ---
+          if (!u.items) u.items = {};
+          
+          if (!u.items[field] || u.items[field] < qty) {
+              replier.reply("🚫 보유하신 [" + field + "] 장비가 부족합니다.\n현재 보유: " + (u.items[field]||0) + "개");
+              delete TRANSACTION_LOCK[sender]; return;
+          }
 
-      // [핵심] 차감 및 지급
-      u[field] -= qty;
-      if (typeof targetU[field] !== "number") targetU[field] = 0;
-      targetU[field] += qty;
+          // 차감
+          u.items[field] -= qty;
+          if (u.items[field] <= 0) delete u.items[field]; // 0개면 삭제
+
+          // 지급
+          if (!targetU.items) targetU.items = {};
+          targetU.items[field] = (targetU.items[field] || 0) + qty;
+
+      } else {
+          // --- 소비템 전송 로직 ---
+          var myQty = u[field] || 0;
+          if (myQty < qty) {
+            replier.reply("🚫 수량이 부족합니다.\n보유: " + fmtNum(myQty) + "개");
+            delete TRANSACTION_LOCK[sender]; return;
+          }
+
+          u[field] -= qty;
+          if (typeof targetU[field] !== "number") targetU[field] = 0;
+          targetU[field] += qty;
+      }
 
       commitSave(true);
       checkAndNotifyTitles(u, replier);
@@ -6118,6 +6827,7 @@ if (isPokemonBusy(u, tradeP.uid)) {
     }
     return;
   }
+
 
 // ==================== [명령어] 선발대 설정 ====================
 if (msg.indexOf("/체육관 선발") === 0 || msg.indexOf("/체육관선발") === 0) {
@@ -6375,65 +7085,224 @@ if (msg === "/챔피언 도전") {
     replyFold(replier, "🏆 챔피언 도전 결과", out);
     return;
 }
-// -------------------- [신규] 선발대 확인 (/내팀) --------------------
-  if (msg === "/선발대" || msg === "/내팀" || msg === "/팀") {
-    
-    // 리스트 예쁘게 뽑아주는 내부 함수
-    function buildTeamList(uids) {
-      if (!uids || uids.length === 0) return "   (등록된 포켓몬이 없습니다)";
+    // -------------------- [신규] 선발대 확인 (/내팀) --------------------
+    if (msg === "/선발대" || msg === "/내팀" || msg === "/팀") {
       
-      var lines = [];
-      for (var i = 0; i < uids.length; i++) {
-        var p = findUserPokemonByUid(u, uids[i]);
-        if (!p) { 
-            lines.push("   " + (i+1) + ". 🚫 (판매됨/사라짐)"); 
-            continue; 
+      // 리스트 예쁘게 뽑아주는 내부 함수
+      function buildTeamList(uids) {
+        if (!uids || uids.length === 0) return "   (등록된 포켓몬이 없습니다)";
+        
+        var lines = [];
+        for (var i = 0; i < uids.length; i++) {
+          var p = findUserPokemonByUid(u, uids[i]);
+          if (!p) { 
+              lines.push("   " + (i+1) + ". 🚫 (판매됨/사라짐)"); 
+              continue; 
+          }
+          
+          var name = getDisplayName(p);
+          var grade = p.grade ? "[" + p.grade + "]" : "[D]";
+          if(p.grade === "S") grade += "👑";
+          
+          lines.push("   " + (i+1) + ". #" + p.uid + " " + name + " (" + (p.enh||0) + "강) " + grade);
         }
-        
-        var name = getDisplayName(p);
-        var grade = p.grade ? "[" + p.grade + "]" : "[D]";
-        if(p.grade === "S") grade += "👑";
-        
-        lines.push("   " + (i+1) + ". #" + p.uid + " " + name + " (" + (p.enh||0) + "강) " + grade);
+        return lines.join("\n");
       }
-      return lines.join("\n");
+
+      var gymStr = buildTeamList(u.gymTeam);
+      var champStr = buildTeamList(u.champTeam);
+
+      replier.reply(
+        "📋 " + sender + "님의 선발대 배치 현황\n" +
+        "━━━━━━━━━━━━━━\n" +
+        "🛡️ [체육관 도전팀] (3마리)\n" + 
+        gymStr + "\n\n" +
+        "👑 [챔피언 도전/방어팀] (6마리)\n" + 
+        champStr + "\n" +
+        "━━━━━━━━━━━━━━\n" +
+        "💡 멤버를 바꾸려면 선발 명령어를 다시 입력하세요.\n" +
+        "예: /체육관선발 10 20 30"
+      );
+      return;
     }
 
-    var gymStr = buildTeamList(u.gymTeam);
-    var champStr = buildTeamList(u.champTeam);
+  // ==================================================================
+  // 🦖 [레이드] 유저 명령어 (/레이드, /레이드 정보)
+  // ==================================================================
+  
+  // 1. 레이드 정보 확인
+  if (msg === "/레이드 정보" || msg === "/보스") {
+      if (!d.worldBoss || !d.worldBoss.active) {
+          replier.reply("💤 현재 출현한 월드 보스가 없습니다.");
+          return;
+      }
+      
+      var b = d.worldBoss;
+      var now = nowMs();
+      var remain = b.endTime - now;
+      
+      if (remain <= 0) { // 시간 초과 처리
+          var endMsg = endRaidBoss(d, false); // 실패 처리
+          commitSave(true);
+          replier.reply(endMsg);
+          return;
+      }
+      
+      var min = Math.floor(remain / 60000);
+      var hpPct = Math.floor((b.curHp / b.maxHp) * 1000) / 10; // 소수점 1자리
+      
+      // HP 바 그리기
+      var barLen = 15;
+      var filled = Math.floor((b.curHp / b.maxHp) * barLen);
+      var bar = "";
+      for(var i=0; i<barLen; i++) bar += (i < filled ? "🟥" : "⬜");
+      
+      // 딜미터기 (TOP 3)
+      var rankTxt = "";
+      var list = [];
+      for (var name in b.logs) list.push({n:name, d:b.logs[name]});
+      list.sort(function(a, b) { return b.d - a.d; }); // 내림차순
+      
+      for(var k=0; k<Math.min(3, list.length); k++) {
+          rankTxt += (k+1) + ". " + list[k].n + " (" + fmtNum(list[k].d) + ")\n";
+      }
+      if(!rankTxt) rankTxt = "(아직 참여자가 없습니다)";
 
-    replier.reply(
-      "📋 " + sender + "님의 선발대 배치 현황\n" +
-      "━━━━━━━━━━━━━━\n" +
-      "🛡️ [체육관 도전팀] (3마리)\n" + 
-      gymStr + "\n\n" +
-      "👑 [챔피언 도전/방어팀] (6마리)\n" + 
-      champStr + "\n" +
-      "━━━━━━━━━━━━━━\n" +
-      "💡 멤버를 바꾸려면 선발 명령어를 다시 입력하세요.\n" +
-      "예: /체육관선발 10 20 30"
-    );
-    return;
+      replier.reply(
+          "🦖 [월드 보스] " + b.name + "\n" +
+          "━━━━━━━━━━━━━━\n" +
+          "❤️ 체력: " + fmtNum(b.curHp) + " / " + fmtNum(b.maxHp) + " (" + hpPct + "%)\n" +
+          "[" + bar + "]\n\n" +
+          "⏳ 남은 시간: " + min + "분\n\n" +
+          "🏆 [딜 미터기 TOP 3]\n" + rankTxt + "\n" +
+          "👉 참여: '/레이드' 입력 (챔피언 선발대 출격!)"
+      );
+      return;
   }
-}
-//respone함수 닫음
 
-// [수정됨] 에러 방지 버전: 파일이 없으면 읽지 않고 넘어감
+  // 2. 레이드 공격 (시간 체크 + 3배 크리 + 2분 치료 + 금고)
+  if (msg === "/레이드") {
+      // (1) 보스 존재 여부 확인
+      if (!d.worldBoss || !d.worldBoss.active) {
+          replier.reply("💤 현재 진행 중인 레이드가 없습니다.");
+          return;
+      }
+      var b = d.worldBoss;
+      var now = nowMs();
+
+      // ★ [시간 체크] 시간이 다 됐으면 즉시 종료 처리
+      if (b.endTime <= now) {
+          var failMsg = endRaidBoss(d, false); // 실패(false) 처리로 정산 호출
+          commitSave(true);
+          replier.reply("⏰ 시간이 초과되었습니다!\n\n" + failMsg);
+          return;
+      }
+      
+      // (2) 챔피언 선발대 체크
+      if (!u.champTeam || u.champTeam.length === 0) {
+          replier.reply("🚫 챔피언 선발대가 없습니다.\n먼저 '/챔피언선발'로 6마리를 등록해주세요.");
+          return;
+      }
+      
+      // (3) 쿨타임 체크 (간호순 치료 중)
+      if (now - u.lastRaidAt < RAID_COOLDOWN_MS) {
+          var remainSec = Math.ceil((RAID_COOLDOWN_MS - (now - u.lastRaidAt)) / 1000);
+          replier.reply("🏥 간호순: \"환자분! 아직 안 돼요! 2분은 쉬셔야 합니다!\"\n(🩹 정성껏 치료 중...)\n⏳ 남은 시간: " + remainSec + "초");
+          return;
+      }
+      
+      // (4) 데미지 계산
+      var power = getRaidPower(u);
+      var randomRate = 0.9 + (Math.random() * 0.2); 
+      var dmg = Math.floor(power * randomRate); 
+      
+      // ★ [치명타!] 15% 확률로 3배 데미지
+      var isCrit = Math.random() < 0.15; 
+      var hitIcon = "💥";
+      var hitTag = "공격";
+      
+      if (isCrit) {
+          dmg = Math.floor(dmg * 3);   
+          hitIcon = "☄️";             
+          hitTag = "치명타";           
+      }
+      
+      // (5) 보스 피격 및 로그 기록
+      b.curHp -= dmg;
+      if (!b.logs[sender]) b.logs[sender] = 0;
+      b.logs[sender] += dmg; 
+      
+      // ★ [금고 시스템] 보스 금고에 적립
+      var dropCoin = Math.floor(Math.random() * (RAID_MAX_COIN - RAID_MIN_COIN + 1)) + RAID_MIN_COIN;
+      b.rewardPool = (b.rewardPool || 0) + dropCoin;
+      
+      commitSave(false);
+      
+      // (6) 결과 출력
+      var out = "⚔️ [레이드] 챔피언 선발대 총공격!\n" +
+                "━━━━━━━━━━━━━━\n" + 
+                hitIcon + " " + hitTag + ": " + b.name + "에게 -" + fmtNum(dmg) + " 피해!\n" +
+                "🏦 적립: 금고에 코인 " + dropCoin + "개 추가 (총 " + fmtNum(b.rewardPool) + "개)\n";
+      
+      // (7) 처치 여부 체크
+      if (b.curHp <= 0) {
+          b.curHp = 0;
+          b.lastHitter = sender; 
+          var clearMsg = endRaidBoss(d, true); // 성공(true) 처리
+          commitSave(true);
+          checkAndNotifyTitles(u, replier);
+          replier.reply(out + "\n" + clearMsg);
+          return;
+      } 
+      
+      // ★ [부상 시스템] 20% 확률로 부상 (2분 컷)
+      var isInjured = Math.random() < 0.2; 
+      
+      if (isInjured) {
+          u.lastRaidAt = now; 
+          out += "\n🤕 으악! 강력한 반격에 당했습니다!\n" +
+                 "(🚑 간호순에게 실려갑니다... 2분간 치료!)";
+      } else {
+          out += "\n💨 가볍게 반격을 피했습니다!\n" +
+                 "(즉시 다시 공격 가능!)";
+      }
+      
+      replier.reply(out);
+      return;
+  }
+
+
+
+
+
+} // ★ 여기가 response 함수 끝 (리스폰 닫기)
+
+
+// ==================================================================
+// 🔧 [유틸] 데이터 관리 및 타이틀 알림 함수
+// ==================================================================
+
+// [수정됨] 미접속자 정리 함수 (누락된 부분 복구 완료)
 function manageInactiveUsers(d) {
   var now = new Date().getTime();
   var archivePath = "/sdcard/mbot_pokemon_archive.json"; 
   
-  // [핵심 수정] 파일이 존재하는지 먼저 확인!
+  // 파일 존재 여부 확인
   var file = new java.io.File(archivePath);
-  var archive = {}; // 기본값은 빈 객체
+  var archive = {}; 
 
   if (file.exists()) {
-    var archiveStr = File.read(archivePath);
+    var archiveStr = readFile(archivePath); // File.read 대신 readFile 사용 권장
+    if (!archiveStr) {
+        // readFile이 실패했을 경우를 대비해 기존 File.read 시도 (환경 호환성)
+        try { archiveStr = File.read(archivePath); } catch(e) {}
+    }
+    
     if (archiveStr) {
       try {
         archive = JSON.parse(archiveStr);
       } catch (e) {
-        archive = {}; // 깨진 파일이면 빈 것으로 취급
+        archive = {}; 
       }
     }
   }
@@ -6464,14 +7333,22 @@ function manageInactiveUsers(d) {
     }
   }
 
+  // 정리 결과 저장 및 반환
   if (deletedCount > 0 || archivedCount > 0) {
     saveData(d); 
-    File.save(archivePath, JSON.stringify(archive)); 
+    // 아카이브 파일 저장
+    var fos = new java.io.FileOutputStream(file);
+    var str = new java.lang.String(JSON.stringify(archive));
+    fos.write(str.getBytes());
+    fos.close();
+    
     return "✅ 데이터 정리 완료!\n🗑️ 영구 삭제: " + deletedCount + "명\n📦 아카이빙: " + archivedCount + "명";
   } else {
     return "✨ 정리할 데이터가 없습니다.";
   }
 }
+
+// 칭호 획득 알림 함수
 function checkAndNotifyTitles(u, replier) {
   var gained = updateTitles(u);
   if (gained && gained.length > 0) {
