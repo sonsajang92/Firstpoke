@@ -3280,16 +3280,6 @@ function addPokemonToUser(u, pid, isShiny) {
   return uid;
 }
 
-// [신규] 이름 앞에 별 붙여주는 함수
-function getDisplayName(p) {
-  var db = findPokemonDB(p.pid);
-  var name = db ? db.name : "알수없음";
-  if (p.shiny) {
-    return "✨" + name; 
-  }
-  return name;
-}
-
 // 희귀도: 1(흔함) ~ 5(전설)
 // db.rarity 또는 db.tier 같은 값이 이미 있으면 거기에 맞춰 연결하면 됨.
 function randInt(min, max) {
@@ -4296,7 +4286,7 @@ normalizeUserData(u);
       return;
   }
 
-  // -------------------- [수정됨] /정보 (아이템 목록 제거) --------------------
+  // -------------------- [수정됨] /정보 (배지 표시 추가 완료) --------------------
   if (msg.indexOf("/정보") === 0) {
     var t = getTargetFromMsg(d, sender, msg, "/정보");
     if (!t) {
@@ -4334,15 +4324,26 @@ normalizeUserData(u);
     }
     var dexRate = (POKEMON_DB.length === 0) ? 0 : Math.floor((uniqueCaught / POKEMON_DB.length) * 1000) / 10;
 
+    // ★ [추가됨] 배지 목록 생성 로직
+    var badgesStr = "";
+    if (!target.badges) target.badges = [];
+    for (var k = 0; k < GYM_LEADERS.length; k++) {
+        var g = GYM_LEADERS[k];
+        if (target.badges.indexOf(g.badge) !== -1) badgesStr += g.badge + " ";
+    }
+    if (badgesStr === "") badgesStr = "(없음)";
+
     var out = "";
     out += "👤 " + targetName + "님의 트레이너 정보\n\n";
     out += "Lv." + target.trainerLv + " (" + pctExp + "%)\n";
     out += bar + "  " + cur + "/" + need + " EXP\n\n";
     
     out += "💰 재화: " + fmtNum(target.gold) + "💰\n";
-    // 타인 가방은 안 보여주는 게 깔끔합니다.
     
-    out += "\n🐾 컬렉션\n";
+    // ★ [추가됨] 배지 출력
+    out += "🎖️ 배지: " + badgesStr + "\n\n";
+    
+    out += "🐾 컬렉션\n";
     out += "보유 포켓몬: " + (target.pokemons ? target.pokemons.length : 0) + "마리\n";
     out += "도감: " + uniqueCaught + "/" + POKEMON_DB.length + " (" + dexRate + "%)\n\n";
     
@@ -4354,6 +4355,7 @@ normalizeUserData(u);
     commitSave(false);
     return;
   }
+
   // -------------------- [수정됨] 내가방 (다코타 아이템 섹션 추가) --------------------
   if (msg === "/내가방") {
     var list = "";
@@ -5848,7 +5850,7 @@ if (msg === "/슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커
   }
 
   // ==================================================================
-  // 🧭 [탐험 시스템 v2.3] 대모험 & 보상 리밸런싱 (수정완료: 오류 해결)
+  // 🧭 [탐험 시스템 v2.4] (닉네임 표시 & 1시간 적용)
   // ==================================================================
 
   // 1. 탐험 취소 (실수 방지용)
@@ -5865,7 +5867,7 @@ if (msg === "/슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커
 
     replier.reply(
       "↩️ 탐험을 취소하고 긴급 복귀 명령을 내렸습니다.\n\n" +
-      "🏃 " + pName + "이(가) 빈손으로 헐레벌떡 돌아왔습니다.\n" +
+      "🏃 " + decoName + "님의 " + pName + "이(가) 빈손으로 헐레벌떡 돌아왔습니다.\n" +
       "⚠️ 중도 포기로 인해 아무런 보상도 획득하지 못했습니다."
     );
     return;
@@ -5875,9 +5877,8 @@ if (msg === "/슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커
   if (msg.indexOf("/탐험") === 0) {
     var now = nowMs();
     
-    // ★ [설정] 탐험 소요 시간
-    // var EXPLORE_TIME_MS = 60 * 60 * 1000; // [실전용] 1시간
-    var EXPLORE_TIME_MS = 10 * 1000;      // [테스트용] 10초
+    // ★ [설정] 탐험 소요 시간 (1시간 적용 완료)
+    var EXPLORE_TIME_MS = 60 * 60 * 1000; 
 
     // -----------------------------------------------------------
     // [A] 탐험 복귀 및 결과 정산
@@ -5892,7 +5893,7 @@ if (msg === "/슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커
         var min = Math.floor(diff / 60000);
         var sec = Math.floor((diff % 60000) / 1000);
         replier.reply(
-          "🧭 " + pName + "이(가) 대모험을 떠난 상태입니다.\n" +
+          "🧭 " + decoName + "님의 " + pName + "이(가) 대모험을 떠난 상태입니다.\n" +
           "현재 [" + u.exploration.routes[Math.floor(Math.random()*u.exploration.routes.length)] + "] 주변을 지나는 중...\n\n" +
           "⏳ 남은 시간: " + min + "분 " + sec + "초\n" +
           "⚠️ 탐험 중에는 해당 포켓몬을 사용할 수 없습니다."
@@ -5900,72 +5901,61 @@ if (msg === "/슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커
         return;
       }
 
-      // 2) ★ [보상 정산 로직 v2.3]
-      // 기본 보상 (골드 10만~30만 / 경험치 3만~5만)
+      // 2) ★ [보상 정산 로직]
       var baseGold = randInt(100000, 300000); 
       var baseExp = randInt(30000, 50000);   
       
       var pGrade = pEx ? (pEx.grade || "D") : "D";
       var pEnh = pEx ? (pEx.enh || 0) : 0;
 
-      // 보너스 배율 (강화수치 반영)
       var bonusMult = 1 + (u.trainerLv * 0.05) + (pEnh * 0.05); 
       var finalGold = Math.floor(baseGold * bonusMult);
       var finalExp = Math.floor(baseExp * bonusMult);
 
-      // ★ [핵심] 아이템 슬롯 계산 (3개 ~ 7개로 압축)
-      var lootCalc = 3; // 기본 3칸
-
-      // 등급 보너스 (S: +2, A: +1)
+      var lootCalc = 3; 
       if (pGrade === "S") lootCalc += 2;
       else if (pGrade === "A") lootCalc += 1;
-
-      // 강화 보너스 (20강당 +1칸)
-      lootCalc += Math.floor(pEnh / 20); // 60강이면 +3칸
+      lootCalc += Math.floor(pEnh / 20); 
       
-      var lootCount = Math.min(7, lootCalc); // 최대 7칸
-      lootCount += randInt(-1, 1); // 약간의 변수
-      lootCount = Math.max(3, Math.min(7, lootCount)); // 최종 3~7칸
+      var lootCount = Math.min(7, lootCalc); 
+      lootCount += randInt(-1, 1); 
+      lootCount = Math.max(3, Math.min(7, lootCount)); 
 
       var itemLog = "";
       
       for(var i=0; i<lootCount; i++) {
-          // 🔥 [수정] 변수명을 rnd -> rVal로 변경하여 글로벌 함수 충돌 해결!
           var rVal = Math.random();
           
-          // [확률 테이블]
-          if (rVal < 0.0005) { // 0.05%
+          if (rVal < 0.0005) { 
               u.godBall++; itemLog += "👑 슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커평범한용태는미친사람갓민수랄부볼 +1 (초대박!!)\n"; 
           }
-          else if (rVal < 0.08) { // 8% (티어리셋 상향)
+          else if (rVal < 0.08) { 
               u.reroll++; itemLog += "🔄 티어리셋권 +1 (대박!!)\n"; 
           }
-          else if (rVal < 0.15) { // 12%
+          else if (rVal < 0.15) { 
               u.cookie++; itemLog += "🍪 두쫀쿠 +1\n"; 
           }
-          else if (rVal < 0.30) { // 15%
+          else if (rVal < 0.30) { 
               u.dopaTicket++; itemLog += "💳 도파민강화권 +1\n"; 
           }
-          else if (rVal < 0.45) { // 15%
-              // 티켓 가끔 2장
+          else if (rVal < 0.45) { 
               var tAmt = (Math.random() < 0.3) ? 2 : 1;
               u.ticket += tAmt; itemLog += "🎫 이동티켓 +" + tAmt + "\n"; 
           }
-          else if (rVal < 0.65) { // 하이퍼볼 (5~15개)
+          else if (rVal < 0.65) { 
               var amt = randInt(5, 15);
               u.ultraBall += amt; itemLog += "⚫ 하이퍼볼 +" + amt + "\n";
           }
-          else if (rVal < 0.85) { // 슈퍼볼 (15~30개)
+          else if (rVal < 0.85) { 
               var amt = randInt(15, 30);
               u.superBall += amt; itemLog += "🔵 슈퍼볼 +" + amt + "\n";
           }
-          else { // 몬스터볼 (30~50개) - 다이소급 지급
+          else { 
               var ballAmt = randInt(30, 50);
               u.ball += ballAmt; itemLog += "🔴 몬스터볼 +" + ballAmt + "\n";
           }
       }
       
-      // 데이터 반영
       u.gold += finalGold;
       addExpWithLevelUpMsg(u, finalExp);
       var routeStr = u.exploration.routes.join(" ➔ ");
@@ -5974,13 +5964,13 @@ if (msg === "/슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커
       commitSave(true);
       checkAndNotifyTitles(u, replier);
 
-      // 결과 메시지 (7개 기준 멘트)
       var performanceMsg = "평범한 탐험이었습니다.";
       if (lootCount >= 7) performanceMsg = "🔥 " + pGrade + "등급 " + pEnh + "강의 압도적인 스펙으로 지역을 휩쓸었습니다!";
       else if (lootCount >= 5) performanceMsg = "✨ 훌륭한 능력치 덕분에 많은 보물을 발견했습니다!";
 
+      // ★ [수정] 닉네임 표시 추가
       replier.reply(
-        "🎉 " + pName + " 탐험 복귀 완료!\n" +
+        "🎉 " + decoName + "님의 " + pName + " 탐험 복귀 완료!\n" +
         "━━━━━━━━━━━━━━\n" +
         "🗺️ 이동 경로:\n" + routeStr + "\n\n" +
         "💬 탐험 보고:\n" + performanceMsg + "\n\n" +
@@ -6017,10 +6007,8 @@ if (msg === "/슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커
       return;
     }
 
-    // 이름 가져오기
     var pNameStart = getDisplayName(pStart);
 
-    // 경로 생성 (랜덤 3~5개 지역)
     var routeCount = randInt(3, 5);
     var routes = [];
     var possibleRegions = [];
@@ -6031,22 +6019,21 @@ if (msg === "/슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커
     for(var r=0; r<routeCount; r++) {
         routes.push(randomPick(possibleRegions));
     }
-    // 마지막엔 10% 확률로 냥치의 방 들름
     if (Math.random() < 0.1) routes.push("냥치의 방");
 
-    // 탐험 데이터 저장
     u.exploration = {
       uid: pStart.uid,
       routes: routes,
-      region: routes[0], // 대표 지역 하나 저장 (호환성용)
+      region: routes[0], 
       startAt: now,
       endAt: now + EXPLORE_TIME_MS
     };
 
     commitSave(true);
     
+    // ★ [수정] 닉네임 표시 추가
     replier.reply(
-      "🎒 " + pNameStart + "이(가) 대모험을 떠납니다!\n" +
+      "🎒 " + decoName + "님의 " + pNameStart + "이(가) 대모험을 떠납니다!\n" +
       "━━━━━━━━━━━━━━\n" +
       "📅 예정 경로: " + routes[0] + " 외 " + (routes.length-1) + "곳\n" +
       "⏳ 소요 시간: 1시간\n" +
@@ -6057,6 +6044,7 @@ if (msg === "/슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커
     );
     return;
  }
+
 
   if (msg === "/전적") {
     ensureUserStats(u);
