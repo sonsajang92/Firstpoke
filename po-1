@@ -47,6 +47,8 @@ var EXPLORE_COOLDOWN_MS = 30 * 1000;// /탐험 30초
 var ENHANCE_COOLDOWN_MS = 5 * 1000;// /강화 5초
 var BATTLE_COOLDOWN_MS = 10 * 1000;// /배틀 10초
 var ACTIVE_TTL_MS = 6 * 60 * 60 * 1000;// 6시간 이내 채팅한 유저만 배틀 매칭
+// ==================== [긴급] 최대 보유량 제한 ====================
+var MAX_POKEMON_SLOT = 300; // 300마리 넘으면 포획 불가
 
 // 포획 보상 (난수)
 var CATCH_GOLD_MIN = 35;
@@ -5097,13 +5099,13 @@ normalizeUserData(u);
 
 
 
-// -------------------- /판매 하위 N (탐험 보호 적용) --------------------
+// -------------------- [수정] /판매 하위 N (대량 판매 최적화) --------------------
 if (msg.indexOf("/판매 하위") === 0) {
   var sp = msg.split(" ").filter(Boolean);
   var n = parseInt(sp[2], 10);
 
   if (isNaN(n) || n <= 0) {
-    replier.reply("사용법: /판매 하위 5");
+    replier.reply("사용법: /판매 하위 [숫자]\n예: /판매 하위 50");
     return;
   }
 
@@ -5114,37 +5116,47 @@ if (msg.indexOf("/판매 하위") === 0) {
 
   var sorted = sortPokemonsByPower(u.pokemons); // 높은 순 정렬
   var maxSell = Math.min(n, sorted.length - 1); // 최소 1마리는 남김
-  var targets = sorted.slice(sorted.length - maxSell); // 뒤에서부터 n마리 (낮은 순)
+  var targets = sorted.slice(sorted.length - maxSell); // 뒤에서부터 n마리
 
   var totalGold = 0;
-  var soldLines = [];
-  var skippedCount = 0; // 탐험 중이라 못 판 마릿수
+  var soldCount = 0;
+  var skippedCount = 0;
+  
+  // 판매 로그 (너무 길면 자르기 위해 배열로 저장)
+  var logLimit = 20; 
+  var soldLogs = [];
 
   for (var i = u.pokemons.length - 1; i >= 0; i--) {
     var p = u.pokemons[i];
 
+    // 판매 대상인지 확인
+    var isTarget = false;
     for (var j = 0; j < targets.length; j++) {
       if (p.uid === targets[j].uid) {
-        
-        // ★ [핵심 추가] 탐험 중인 포켓몬은 판매 스킵!
-        if (isPokemonBusy(u, p.uid)) {
-            skippedCount++;
-            break; // 판매 안 하고 넘어감
-        }
-
-        var db = findPokemonDB(p.pid);
-        var name = db ? db.name : "포켓몬";
-        // ★ 이로치 이름 적용
-        if (p.shiny) name = "✨" + name;
-        
-        var price = sellPrice(p.pid, p.enh, p.grade); 
-
-        u.pokemons.splice(i, 1); // 가방에서 삭제
-        totalGold += price;
-
-        soldLines.push("#" + p.uid + " " + name + " " + (p.enh || 0) + "강 (+" + fmtNum(price) + "💰)");
+        isTarget = true;
         break;
       }
+    }
+
+    if (isTarget) {
+        // 탐험 중 보호
+        if (isPokemonBusy(u, p.uid)) {
+            skippedCount++;
+            continue;
+        }
+
+        var price = sellPrice(p.pid, p.enh, p.grade);
+        u.pokemons.splice(i, 1); // 삭제
+        totalGold += price;
+        soldCount++;
+
+        // 로그는 20개까지만 기록 (렉 방지)
+        if (soldLogs.length < logLimit) {
+            var db = findPokemonDB(p.pid);
+            var name = db ? db.name : "포켓몬";
+            if (p.shiny) name = "✨" + name;
+            soldLogs.push("#" + p.uid + " " + name + " (+" + fmtNum(price) + "💰)");
+        }
     }
   }
 
@@ -5152,14 +5164,22 @@ if (msg.indexOf("/판매 하위") === 0) {
   commitSave(true);
   checkAndNotifyTitles(u, replier);
 
-  var resultMsg = sayDo(decoName, "하위 포켓몬 판매가 완료되었습니다.") +
-    "\n\n🧾 판매 내역\n" + soldLines.join("\n") +
-    "\n\n💰 총 획득 골드: +" + fmtNum(totalGold) + "💰" +
-    "\n💰 잔여 골드: " + fmtNum(u.gold) + "💰";
+  var resultMsg = "🗑️ 대량 판매 완료!\n" +
+                  "총 " + soldCount + "마리를 판매했습니다.\n\n";
 
-  // 탐험 중이라 못 판 애가 있으면 알려줌
+  if (soldLogs.length > 0) {
+      resultMsg += "[판매 내역 (상위 " + soldLogs.length + "개)]\n" + soldLogs.join("\n");
+      if (soldCount > logLimit) {
+          resultMsg += "\n...외 " + (soldCount - logLimit) + "마리";
+      }
+  }
+
+  resultMsg += "\n\n💰 총 획득: +" + fmtNum(totalGold) + "💰\n" +
+               "💰 현재 골드: " + fmtNum(u.gold) + "💰\n" +
+               "🎒 남은 포켓몬: " + u.pokemons.length + " / " + MAX_POKEMON_SLOT;
+
   if (skippedCount > 0) {
-      resultMsg += "\n\n⚠️ 탐험 중인 " + skippedCount + "마리는 판매되지 않았습니다.";
+      resultMsg += "\n⚠️ 탐험 중인 " + skippedCount + "마리는 판매되지 않았습니다.";
   }
 
   replier.reply(resultMsg);
@@ -5716,6 +5736,10 @@ if (msg.indexOf("/판매") === 0) {
    
 // [수정됨] 포획 담당 함수 (장비 드랍 및 안전장치 적용 완료)
 function handleCatch(ballType, ballName, decoName, replier) {
+if (u.pokemons.length >= MAX_POKEMON_SLOT) {
+      replier.reply("🚫 [가방이 꽉 찼습니다!]\n보유 한도: " + MAX_POKEMON_SLOT + "마리\n\n현재 " + u.pokemons.length + "마리를 가지고 있습니다.\n'/판매 하위 [숫자]' 명령어로 정리해주세요.");
+      return;
+  }
   var wild = getWild(d, room);
   
   if (!wild) {
@@ -6951,6 +6975,13 @@ if (msg.indexOf("/배틀연속") === 0) {
       if (!targetU) { replier.reply("🚫 '" + targetName + "'님을 찾을 수 없습니다."); delete TRANSACTION_LOCK[sender]; return; }
       
       normalizeUserData(targetU);
+
+// ★ [긴급 패치] 상대방 가방 체크
+      if (targetU.pokemons.length >= MAX_POKEMON_SLOT) {
+          replier.reply("🚫 " + targetName + "님의 포켓몬 가방이 꽉 찼습니다.\n(최대 " + MAX_POKEMON_SLOT + "마리)");
+          delete TRANSACTION_LOCK[sender]; 
+          return; 
+      }
 
       // 내 포켓몬 확인
       var myPidx = -1;
