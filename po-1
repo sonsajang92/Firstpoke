@@ -3921,7 +3921,7 @@ function response(room, msg, sender, isGroupChat, replier, imageDB) {
 if (msg.indexOf("/관리자") === 0) {
     // sender 옆에 imageDB를 같이 넘겨줍니다.
     if (!isAdmin(sender, imageDB)) { 
-      replier.reply("🚫 접근 권한이 없습니다.\n(보안: 닉네임 사칭 감지됨)");
+      replier.reply("🚫 접근 권한이 없습니다.\n(보안: 손사장이 아님)");
       return;
     }
 
