@@ -2874,12 +2874,23 @@ var EQUIP_DB = {
   "해리의마라": { type: "raid_crit_dmg",  val: 5.0,  icon: "🌶", desc: "[레이드] 리더 장착 시 치명타 데미지 5배 적용!", tier: 3 }
 };
 
+// -------------------- 🛡️ [보안 강화] 운영자 설정 (지문 인식) --------------------
 
-// -------------------- 운영자(관리자) 설정 --------------------
-var ADMIN_MAP = {
-  "손사장": true};
-function isAdmin(sender) {
-  return !!ADMIN_MAP[sender];
+// ★ 여기에 아까 알아낸 "숫자(고유코드)"를 넣으세요! (여러 명이면 콤마로 추가)
+var ADMIN_HASHES = {
+  "123456789": true   // 예: 사장님의 고유 코드 (따옴표 안에 넣으세요)
+};
+
+// 이름(sender)과 지문(imageDB)을 동시에 검사하는 함수
+function isAdmin(sender, imageDB) {
+  // 1. 이미지DB가 없으면(테스트 환경 등) 무조건 실패 (보안)
+  if (!imageDB) return false;
+  
+  // 2. 현재 말한 사람의 프로필 지문(Hash) 추출
+  var userHash = java.lang.String(imageDB.getProfileImage()).hashCode();
+  
+  // 3. 등록된 지문인지 확인
+  return !!ADMIN_HASHES[userHash];
 }
 function cleanName(s) {
   if (!s) 
@@ -3820,7 +3831,15 @@ function getRaidPower(u) {
 
 
 // -------------------- 메인 응답 --------------------
-function response(room, msg, sender, isGroupChat, replier) {
+function response(room, msg, sender, isGroupChat, replier, imageDB) {
+
+// [임시] 내 고유코드 확인용 (보안 설정 후에는 지우셔도 됩니다)
+  if (msg === "/내코드") {
+      var myHash = java.lang.String(imageDB.getProfileImage()).hashCode();
+      replier.reply(sender + "님의 고유 코드: " + myHash);
+      return;
+  }
+
   trackRoomActiveMem(room, sender);
   var MATCH_POOL = "__GLOBAL_MATCH__";
   if (!ROOM_ACTIVE_MEM[MATCH_POOL]) 
@@ -3899,9 +3918,10 @@ function response(room, msg, sender, isGroupChat, replier) {
   // ==================================================================
   // 👑 [관리자] 통합 시스템 (레이드 + 장비지급 + 리팩토링)
   // ==================================================================
-  if (msg.indexOf("/관리자") === 0) {
-    if (!isAdmin(sender)) {
-      replier.reply("🚫 접근 권한이 없습니다.");
+if (msg.indexOf("/관리자") === 0) {
+    // sender 옆에 imageDB를 같이 넘겨줍니다.
+    if (!isAdmin(sender, imageDB)) { 
+      replier.reply("🚫 접근 권한이 없습니다.\n(보안: 닉네임 사칭 감지됨)");
       return;
     }
 
