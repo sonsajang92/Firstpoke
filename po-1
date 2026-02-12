@@ -2060,9 +2060,7 @@ function cooldownRemainMsg(sender, lastAt, cooldownMs, actionName) {
   var sec = Math.ceil(remainMs / 1000);
   return sender + "님, " + sec + "초 후 다시 " + actionName + "할 수 있습니다.";
 }
-// -------------------- [신규] 탐험 상태 확인 유틸 --------------------
-var EXPLORE_TIME_MS = 60 * 60 * 1000; // 1시간 (테스트할 땐 1000 * 10 으로 10초만 해보세요) 60 * 60 * 1000;
-
+// -------------------- [신규] 탐험 상태 확인 유틸 -------------------
 function isPokemonBusy(u, uid) {
   if (!u.exploration) return false; // 탐험 정보 없으면 안 바쁨
   if (u.exploration.uid === uid) return true; // 탐험 간 놈임
@@ -3904,7 +3902,91 @@ function getRaidPower(u) {
     return totalPower;
 }
 
+// ==================================================================
+// ⚔️ [레이드] 실제 공격 실행 함수 (정답 맞췄을 때만 발동)
+// ==================================================================
+function executeRaidAttack(d, room, sender, u, replier, decoName) {
+    var b = d.worldBoss;
+    
+    // 1. 보스 상태 재확인 (문제 푸는 사이에 죽었거나 끝났을 수 있음)
+    if (!b || !b.active || b.endTime <= new Date().getTime()) {
+        replier.reply("늦었습니다... 이미 레이드가 종료되었습니다.");
+        return;
+    }
 
+    // 2. 데미지 계산 (기존 20배 -> 60배로 3배 상향!)
+    // 문제를 푸는 시간이 걸리므로 한 방 데미지를 크게 줍니다.
+    var power = getRaidPower(u);
+    var randomRate = 0.9 + (Math.random() * 0.2); 
+    var raidBuffMult = 60; 
+    var dmg = Math.floor(power * randomRate * raidBuffMult); 
+    
+    // 장비 효과 (치명타 등)
+    var leaderUid = u.champTeam[0];
+    var leaderP = findUserPokemonByUid(u, leaderUid);
+    var equipType = "", equipVal = 0;
+    
+    if (leaderP && leaderP.equip && EQUIP_DB[leaderP.equip]) {
+        equipType = EQUIP_DB[leaderP.equip].type;
+        equipVal = EQUIP_DB[leaderP.equip].val;
+    }
+
+    var critChance = 0.15; 
+    var critMult = 3.0;    
+    var itemMsg = "";
+
+    if (equipType === "raid_crit_rate") { critChance += equipVal; itemMsg = " (👓두둥등장!)"; }
+    else if (equipType === "raid_crit_dmg") { critMult = equipVal; itemMsg = " (🌶해리의 매운맛!)"; }
+
+    var isCrit = Math.random() < critChance; 
+    var hitIcon = "💥"; var hitTag = "공격";
+    
+    if (isCrit) {
+        dmg = Math.floor(dmg * critMult);   
+        hitIcon = "☄️"; hitTag = "치명타" + itemMsg;           
+    }
+    
+    // 3. 보스 피격 및 보상 적립
+    b.curHp -= dmg;
+    if (!b.logs[sender]) b.logs[sender] = 0;
+    b.logs[sender] += dmg; 
+    
+    var dropCoin = 1 + Math.floor(dmg / 75000); 
+    dropCoin = Math.min(100, dropCoin); 
+    b.rewardPool = (b.rewardPool || 0) + dropCoin;
+    
+    // 4. 처치 여부 (막타)
+    if (b.curHp <= 0) {
+        b.curHp = 0;
+        b.lastHitter = sender; 
+        var clearMsg = endRaidBoss(d, true);
+        commitSave(true);
+        checkAndNotifyTitles(u, replier);
+        replier.reply("⚔️ [레이드] " + decoName + "님의 결정타!\n" + hitIcon + " " + hitTag + ": -" + fmtNum(dmg) + " 피해!\n💰 금고 적립: +" + dropCoin + "코인\n\n" + clearMsg);
+        return;
+    } 
+
+    // 5. ★ [부상 시스템] 5% 확률로 2분 쿨타임 (간호순)
+    var isInjured = Math.random() < 0.05; 
+    var injureMsg = "";
+    
+    if (isInjured) {
+        u.lastRaidAt = new Date().getTime(); // 현재 시간 기록 (치료 시작)
+        injureMsg = "\n🚑 [부상] 보스의 반격에 당했습니다! (2분간 치료 필요)";
+    } else {
+        injureMsg = "\n💨 가볍게 반격을 피했습니다! (바로 공격 가능)";
+    }
+
+    commitSave(true);
+
+    var out = "⚔️ [레이드] " + decoName + "님의 총공격!\n" +
+              "━━━━━━━━━━━━━━\n" + 
+              hitIcon + " " + hitTag + ": " + b.name + "에게 -" + fmtNum(dmg) + " 피해!\n" +
+              "💰 금고 적립: +" + dropCoin + "코인\n" +
+              injureMsg;
+    
+    replier.reply(out);
+}
 
 // -------------------- 메인 응답 --------------------
 function response(room, msg, sender, isGroupChat, replier, imageDB) {
@@ -7785,10 +7867,10 @@ if (msg === "/챔피언 도전") {
     }
 
   // ==================================================================
-  // 🦖 [레이드] 유저 명령어 (/레이드, /레이드 정보)
+  // 🦖 [레이드 v3.5] 유저 명령어 (정보 확인 + 문제 풀이)
   // ==================================================================
   
-  // 1. 레이드 정보 확인
+  // 1. 레이드 정보 확인 (기존 기능 유지)
   if (msg === "/레이드 정보" || msg === "/보스") {
       if (!d.worldBoss || !d.worldBoss.active) {
           replier.reply("💤 현재 출현한 월드 보스가 없습니다.");
@@ -7796,7 +7878,7 @@ if (msg === "/챔피언 도전") {
       }
       
       var b = d.worldBoss;
-      var now = nowMs();
+      var now = nowMs(); // nowMs() 함수 사용
       var remain = b.endTime - now;
       
       if (remain <= 0) { // 시간 초과 처리
@@ -7807,19 +7889,17 @@ if (msg === "/챔피언 도전") {
       }
       
       var min = Math.floor(remain / 60000);
-      var hpPct = Math.floor((b.curHp / b.maxHp) * 1000) / 10; // 소수점 1자리
+      var hpPct = Math.floor((b.curHp / b.maxHp) * 1000) / 10; 
       
-      // HP 바 그리기
       var barLen = 15;
       var filled = Math.floor((b.curHp / b.maxHp) * barLen);
       var bar = "";
       for(var i=0; i<barLen; i++) bar += (i < filled ? "🟥" : "⬜");
       
-      // 딜미터기 (TOP 3)
       var rankTxt = "";
       var list = [];
       for (var name in b.logs) list.push({n:name, d:b.logs[name]});
-      list.sort(function(a, b) { return b.d - a.d; }); // 내림차순
+      list.sort(function(a, b) { return b.d - a.d; }); 
       
       for(var k=0; k<Math.min(3, list.length); k++) {
           rankTxt += (k+1) + ". " + list[k].n + " (" + fmtNum(list[k].d) + ")\n";
@@ -7833,156 +7913,81 @@ if (msg === "/챔피언 도전") {
           "[" + bar + "]\n\n" +
           "⏳ 남은 시간: " + min + "분\n\n" +
           "🏆 [딜 미터기 TOP 3]\n" + rankTxt + "\n" +
-          "👉 참여: '/레이드' 입력 (챔피언 선발대 출격!)"
+          "👉 참여: '/레이드' 입력 (문제 풀고 공격!)"
       );
       return;
   }
 
-  // 2. 레이드 공격 (데미지 20배 + 장비 + 코인 + 실명제 + 치료중 무시)
-  if (msg === "/레이드") {
-      // (1) 보스 존재 여부 확인
-      if (!d.worldBoss || !d.worldBoss.active) {
-          replier.reply("💤 현재 진행 중인 레이드가 없습니다.");
+  // 2. [정답 체크] 숫자만 입력된 경우 감지 (공격 발동)
+  if (u.raidCaptcha && !isNaN(msg)) {
+      var inputAns = parseInt(msg, 10);
+      var now = new Date().getTime();
+
+      // 시간 초과 (15초 지남) -> 문제 삭제 및 무시
+      if (now > u.raidCaptcha.expire) {
+          delete u.raidCaptcha; 
+          return; // 타임아웃
+      }
+
+      // 정답 맞춤!
+      if (inputAns === u.raidCaptcha.ans) {
+          delete u.raidCaptcha; // 문제 삭제
+          
+          // ★ 여기서 아까 만든 공격 함수를 호출합니다!
+          executeRaidAttack(d, room, sender, u, replier, decoName);
           return;
       }
-      var b = d.worldBoss;
-      var now = nowMs();
-
-      // [시간 체크]
-      if (b.endTime <= now) {
-          var failMsg = endRaidBoss(d, false);
-          commitSave(true);
-          replier.reply("⏰ 시간이 초과되었습니다!\n\n" + failMsg);
-          return;
-      }
-      
-      // (2) 챔피언 선발대 유효성 체크
-      if (!u.champTeam) u.champTeam = [];
-      
-      var validTeam = [];
-      var deadCount = 0;
-      for(var i=0; i<u.champTeam.length; i++) {
-          var p = findUserPokemonByUid(u, u.champTeam[i]);
-          if (p) {
-              validTeam.push(u.champTeam[i]);
-          } else {
-              deadCount++;
-          }
-      }
-      u.champTeam = validTeam;
-
-      // 6마리 미만이면 입구컷
-      if (u.champTeam.length < 6) {
-          var msgDead = deadCount > 0 ? ("(사라진 포켓몬: " + deadCount + "마리)\n") : "";
-          replier.reply("🚫 [출격 불가] 챔피언 선발대는 반드시 6마리여야 합니다.\n" + msgDead + "현재 인원: " + u.champTeam.length + "/6\n👉 '/챔피언선발'로 빈자리를 채워주세요!");
-          return;
-      }
-     
-      // ============================================================
-      // (3) ★ 쿨타임 체크 (수정됨: 멘트 없이 무시)
-      // ============================================================
-      if (now - u.lastRaidAt < RAID_COOLDOWN_MS) {
-          return; // 치료 중이면 아무 반응 안 함 (씹음)
-      }
-      // ============================================================
-      
-      // (4) 데미지 계산 (데미지 20배 버프)
-      var power = getRaidPower(u);
-      var randomRate = 0.9 + (Math.random() * 0.2); 
-      var raidBuffMult = 20; 
-      var dmg = Math.floor(power * randomRate * raidBuffMult); 
-      
-      // 장비 체크 (리더)
-      var leaderUid = u.champTeam[0];
-      var leaderP = findUserPokemonByUid(u, leaderUid);
-      var equipType = "";
-      var equipVal = 0;
-      
-      if (leaderP && leaderP.equip && EQUIP_DB[leaderP.equip]) {
-          equipType = EQUIP_DB[leaderP.equip].type;
-          equipVal = EQUIP_DB[leaderP.equip].val;
-      }
-
-      var critChance = 0.15; 
-      var critMult = 3.0;    
-      var itemMsg = "";
-
-      // 전설 장비 효과 (이름에 맞춰 멘트 수정)
-      if (equipType === "raid_crit_rate") { 
-          critChance += equipVal; 
-          itemMsg = " (👓두둥등장!)"; // 멘트 수정
-      }
-      else if (equipType === "raid_crit_dmg") { 
-          critMult = equipVal; 
-          itemMsg = " (🌶해리의 매운맛!)"; // 멘트 수정
-      }
-     
-
-      // 치명타 판정
-      var isCrit = Math.random() < critChance; 
-      var hitIcon = "💥";
-      var hitTag = "공격";
-      
-      if (isCrit) {
-          dmg = Math.floor(dmg * critMult);   
-          hitIcon = "☄️";             
-          hitTag = "치명타" + itemMsg;           
-      }
-      
-// (5) 보스 피격 및 코인 적립
-      b.curHp -= dmg;
-      if (!b.logs[sender]) b.logs[sender] = 0;
-      b.logs[sender] += dmg; 
-      
-      // ==========================================================
-      // ★ [코인 밸런스 재조정] 2.5만 딜당 1코인 (안전 자산 유지)
-      // 계산: 2억 체력 보스 토벌 시 -> 총 8,000코인 공급 (7명 N빵 시 적절)
-      // ==========================================================
-      var dropCoin = 1 + Math.floor(dmg / 25000);
-      
-      // 한 방 최대 획득량 제한 (50개)
-      dropCoin = Math.min(50, dropCoin); 
-
-      b.rewardPool = (b.rewardPool || 0) + dropCoin;
-      
-      commitSave(false);
-
-      // (6) 결과 출력
-      var out = "⚔️ [레이드] " + decoName + "님의 선발대 총공격!\n" +
-                "━━━━━━━━━━━━━━\n" + 
-                hitIcon + " " + hitTag + ": " + b.name + "에게 -" + fmtNum(dmg) + " 피해!\n" +
-                "💰 충격으로 코인 " + dropCoin + "개가 쏟아집니다!\n" +
-                "🏦 현재 금고: " + fmtNum(b.rewardPool) + "코인\n";
-      
-      // (7) 처치 여부 체크
-      if (b.curHp <= 0) {
-          b.curHp = 0;
-          b.lastHitter = sender; 
-          var clearMsg = endRaidBoss(d, true);
-          commitSave(true);
-          checkAndNotifyTitles(u, replier);
-          replier.reply(out + "\n" + clearMsg);
-          return;
-      } 
-      
-      // (8) 부상 시스템 (5%)
-      var isInjured = Math.random() < 0.05; 
-      
-      if (isInjured) {
-          u.lastRaidAt = now; // 여기서 쿨타임 시작
-          out += "\n🤕 으악! 강력한 반격에 당했습니다!\n" +
-                 "(🚑 간호순에게 실려갑니다... 2분간 치료!)";
-      } else {
-          out += "\n💨 가볍게 반격을 피했습니다!\n" +
-                 "(즉시 다시 공격 가능!)";
-      }
-      
-      replier.reply(out);
-      return;
   }
 
+  // 3. [문제 출제] /레이드 입력 시
+  if (msg === "/레이드") {
+      if (!d.worldBoss || !d.worldBoss.active) {
+          replier.reply("💤 현재 진행 중인 레이드가 없습니다."); return;
+      }
+      if (d.worldBoss.endTime <= new Date().getTime()) {
+          replier.reply("⏰ 레이드가 종료되었습니다."); return;
+      }
+      
+      // 선발대 체크
+      if (!u.champTeam || u.champTeam.length < 6) {
+          replier.reply("🚫 챔피언 선발대 6마리가 필요합니다.\n👉 '/챔피언선발' 먼저 해주세요!");
+          return;
+      }
 
+      // ★ [부상 체크] (2분)
+      var RAID_COOLDOWN_MS = 2 * 60 * 1000; 
+      if (nowMs() - u.lastRaidAt < RAID_COOLDOWN_MS) {
+          var remain = Math.ceil((RAID_COOLDOWN_MS - (nowMs() - u.lastRaidAt))/1000);
+          replier.reply("🚑 [치료 중] 간호순: \"아직 안 돼요! 안정을 취하세요.\"\n(남은 시간: " + remain + "초)");
+          return;
+      }
 
+      // ★ [도배 차단] 이미 문제가 출제된 상태면 봇이 대답 안 함
+      if (u.raidCaptcha) {
+          if (new Date().getTime() < u.raidCaptcha.expire) {
+              return; // 무시
+          }
+      }
+
+      // 문제 생성 (1~9 더하기)
+      var n1 = randInt(1, 9);
+      var n2 = randInt(1, 9);
+      
+      u.raidCaptcha = {
+          ans: n1 + n2,
+          expire: new Date().getTime() + 15000 // 15초 유효
+      };
+      
+      commitSave(true); 
+
+      replier.reply(
+          "🔒 [공격 승인 코드]\n" + 
+          "❓  " + n1 + " + " + n2 + " = ?\n" +
+          "━━━━━━━━━━━━━━\n" +
+          "(숫자만 입력 / 제한시간 15초)"
+      );
+      return;
+  }
 
 
 } // ★ 여기가 response 함수 끝 (리스폰 닫기)
