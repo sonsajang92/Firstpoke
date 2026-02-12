@@ -1444,10 +1444,9 @@ function calcHit(attDb, attP, defDb, defP, trainerLvAtt, trainerLvDef) {
 }
 
 
-// [수정] 배틀 로그 시뮬레이터 (닉네임 표시 & 뮤츠/뮤 버프 연결)
-// [수정됨] 배틀 로그 시뮬레이터 (장비 스피드 반영 + 선공 확정 로직)
+// [최종 수정] 배틀 로그 시뮬레이터 (장비 스피드 반영 + 선공 확정 + 반사 데미지)
 function simulateBattleLog(aName, aDb, aP, aTLv, bName, bDb, bP, bTLv) {
-  // 1. 체력 세팅
+  // 1. 체력 세팅 (장비 반영)
   var aMax = calcHP(aDb, aP.enh, aP.ivHp || 0, aP.equip);
   var bMax = calcHP(bDb, bP.enh, bP.ivHp || 0, bP.equip);
   var aHP = aMax;
@@ -1456,8 +1455,10 @@ function simulateBattleLog(aName, aDb, aP, aTLv, bName, bDb, bP, bTLv) {
   // 2. 실전 스피드 계산 (장비 포함)
   function getRealSpd(p) {
       var s = (p.ivSpd || 0); // 기본 잠재력
+      // 강화 수치에 따른 스피드 보정 (선택 사항, 여기선 잠재력+장비 위주)
+      
       if (p.equip && EQUIP_DB[p.equip] && EQUIP_DB[p.equip].type === "spd_flat") {
-          s += EQUIP_DB[p.equip].val; // 장비빨 추가 (꾸꾸 +80)
+          s += EQUIP_DB[p.equip].val; // 장비빨 추가 (예: 꾸꾸 +35)
       }
       return s;
   }
@@ -1470,23 +1471,40 @@ function simulateBattleLog(aName, aDb, aP, aTLv, bName, bDb, bP, bTLv) {
   else if (aSpd < bSpd) aTurn = false;
   else aTurn = (Math.random() < 0.5); // 동점일 때만 랜덤
 
-  // 4. 이름 세팅
+  // 4. 표기용 이름 세팅
   var aPokeName = "[" + aName + "] " + getDisplayName(aP);
   var bPokeName = "[" + bName + "] " + getDisplayName(bP);
   var aShort = aPokeName; 
   var bShort = bPokeName;
 
-  // 로그 헤더
-  var logHeader = "";
+  // 5. 로그 헤더 구성 (표기용 공격력 계산)
+  function getRealAtkDisplay(db, p) {
+    var base = db.basePower;
+    var enhBonus = 1 + (p.enh * 0.085);
+    var ivBonus = 1 + ((p.ivStr || 0) * 0.015);
+    var rMul = rarityBattleMul(db.rarity || 2, db.id); 
+    var sMul = stageBattleMul(db.id).atk;
+    var val = base * enhBonus * ivBonus * rMul * sMul;
+    if (p.shiny) val *= 1.1; 
+    if (p.equip && EQUIP_DB[p.equip] && EQUIP_DB[p.equip].type === "atk_pct") {
+        val *= (1 + EQUIP_DB[p.equip].val);
+    }
+    return Math.floor(val);
+  }
+
+  var aRealAtk = getRealAtkDisplay(aDb, aP);
+  var bRealAtk = getRealAtkDisplay(bDb, bP);
   var aE = enhLabel(aP.enh);
   var bE = enhLabel(bP.enh);
 
+  var logHeader = "";
   logHeader += "⚔️ " + aName + ": " + getDisplayName(aP) + " " + aE + "\n";
-  logHeader += "(HP " + aMax + " / 스피드 " + aSpd + ")\n"; // 로그에 스피드 표시
+  logHeader += "(HP " + aMax + " / 공 " + aRealAtk + " / ⚡속도 " + aSpd + ")\n"; 
   logHeader += "🛡️ " + bName + ": " + getDisplayName(bP) + " " + bE + "\n";
-  logHeader += "(HP " + bMax + " / 스피드 " + bSpd + ")\n\n";
+  logHeader += "(HP " + bMax + " / 공 " + bRealAtk + " / ⚡속도 " + bSpd + ")\n\n";
   logHeader += (aTurn ? (aShort + "의 선공! ⚡\n\n") : (bShort + "의 선공! ⚡\n\n"));
 
+  // 6. 전투 루프 시작
   var turn = 1;
   var MAX_SAFE_TURNS = 200;
   var turnLogs = []; 
@@ -1503,7 +1521,7 @@ function simulateBattleLog(aName, aDb, aP, aTLv, bName, bDb, bP, bTLv) {
     var attLv = aTurn ? aTLv : bTLv;
     var defLv = aTurn ? bTLv : aTLv;
 
-    // 명중/회피/데미지 계산
+    // 명중/회피/데미지 계산 (calcHit 내부에서 calcDamage 호출)
     var hit = calcHit(attDb, attP_curr, defDb, defP_curr, attLv, defLv);
     var thisTurnStr = "";
 
@@ -1512,7 +1530,7 @@ function simulateBattleLog(aName, aDb, aP, aTLv, bName, bDb, bP, bTLv) {
     } else {
       var finalDmg = hit.dmg;
       
-      // 희귀도/턴 보정
+      // 희귀도/턴 보정 (전투 흐름 보정)
       var hpRate = (aTurn ? bHP/bMax : aHP/aMax);
       var mod = getRarityBattleModifier(attDb, turn, hpRate); 
       finalDmg = Math.floor(finalDmg * mod.atk);
@@ -1523,12 +1541,36 @@ function simulateBattleLog(aName, aDb, aP, aTLv, bName, bDb, bP, bTLv) {
       }
       finalDmg = Math.max(1, finalDmg);
 
-      if (aTurn) bHP -= finalDmg; else aHP -= finalDmg;
+      // ★ [신규] 반사 데미지 로직 (시싱의멘탈)
+      var reflectDmg = 0;
+      if (defP_curr.equip === "시싱의멘탈") {
+          // 받은 피해의 60%를 반사 (EQUIP_DB 값 참조)
+          reflectDmg = Math.floor(finalDmg * 0.60);
+      }
 
+      // 데미지 적용
+      if (aTurn) { 
+          bHP -= finalDmg; // B(방어자) 피해
+          if (reflectDmg > 0) {
+              aHP -= reflectDmg; // A(공격자) 반사 피해
+          }
+      } else { 
+          aHP -= finalDmg; // A(방어자) 피해
+          if (reflectDmg > 0) {
+              bHP -= reflectDmg; // B(공격자) 반사 피해
+          }
+      }
+
+      // 로그 작성
       thisTurnStr = turn + "턴) " + attackerName + " 공격! → " + defenderName + " -" + finalDmg;
       if (hit.crit) thisTurnStr += " 💥급소!";
       if (hit.guarded) thisTurnStr += " 🛡️방어";
       thisTurnStr += "\n";
+      
+      // 반사 로그 추가
+      if (reflectDmg > 0) {
+          thisTurnStr += "✨ [반사] 시싱의멘탈 발동! " + attackerName + "에게 " + reflectDmg + " 데미지를 돌려줌!\n";
+      }
       
       var eff = typeEffectText(hit.mult);
       if (eff) thisTurnStr += eff + "\n";
@@ -1536,6 +1578,7 @@ function simulateBattleLog(aName, aDb, aP, aTLv, bName, bDb, bP, bTLv) {
       thisTurnStr += "HP: " + Math.max(0, aHP) + " vs " + Math.max(0, bHP);
     }
     
+    // 위기 멘트 (HP 20% 이하)
     if (!aCrisisShown && aHP > 0 && aHP <= aMax * 0.2) { 
         thisTurnStr += "\n\n" + crisisText(aShort); aCrisisShown = true; 
     }
@@ -1544,15 +1587,22 @@ function simulateBattleLog(aName, aDb, aP, aTLv, bName, bDb, bP, bTLv) {
     }
 
     turnLogs.push(thisTurnStr);
-    aTurn = !aTurn; // 턴 교체
+    
+    // 턴 교체
+    aTurn = !aTurn; 
     turn++;
   }
 
+  // 승패 판정
   var winner = "draw";
-  if (aHP <= 0 && bHP <= 0) winner = "draw";
+  if (aHP <= 0 && bHP <= 0) winner = "draw"; // 러브샷(반사뎀 등)
   else if (bHP <= 0) winner = "A";
   else if (aHP <= 0) winner = "B";
-  else { if (aHP > bHP) winner = "A"; else if (bHP > aHP) winner = "B"; }
+  else { 
+      // 턴 초과 시 HP 많은 쪽 승리
+      if (aHP > bHP) winner = "A"; 
+      else if (bHP > aHP) winner = "B"; 
+  }
 
   var finalLogBody = "";
   var SHOW_HEAD = 10; 
@@ -1571,7 +1621,6 @@ function simulateBattleLog(aName, aDb, aP, aTLv, bName, bDb, bP, bTLv) {
   
   return { winner: winner, log: fullLog, resultLine: resultLine };
 }
-
 function battleRewardLine(gold, exp) {
   return "🎁 보상: +" + gold + "💰 / +" + exp + "EXP";
 }
@@ -2444,7 +2493,8 @@ var REGIONS = [{
   types: ["에스퍼", "강철", "노말"]}, {
   key: "용의둥지", 
   types: ["드래곤", "드래곤", "불"]},
-{ key: "냥치의 방", types: [] }
+{ key: "냥치의 방", types: [] },
+{ key: "다코타", types: [] }  
 ];
 var REGION_ROTATE_MS = 60 * 60 * 1000;// (원하면 남겨도 되고 안 써도 됨)
 var SPAWN_EXPIRE_MS = 60 * 1000;
@@ -2859,44 +2909,69 @@ function buildBattlePowerRanking(d, topN, sender) {
   return { rows: rows, myIdx: myIdx, topN: topN };
 }
 
-// 🎒 [장비] 아이템 데이터베이스 (전설템 밸런스 최종: 너프/버프 통합)
+// 🎒 [장비] 아이템 데이터베이스 (v4.0 대규모 업데이트: 4티어 체제)
 var EQUIP_DB = {
-  // --- [티어 1: 일반] ---
-  "힘의머리띠": { type: "atk_pct", val: 0.10, icon: "🎗️", desc: "공격력 10% 증가" },
-  "자뭉열매":   { type: "hp_flat", val: 1000, icon: "🍒", desc: "최대 체력 +1000" },
-  "구애스카프": { type: "spd_flat", val: 15,   icon: "🧣", desc: "스피드 +15 (선공 유리)" },
-  "방어보석":   { type: "def_pct", val: 0.15, icon: "💠", desc: "받는 피해 15% 감소" },
+  // =================================================================
+  // [Tier 1] 기초 스탯 아이템
+  // =================================================================
+  "힘의머리띠": { type: "atk_pct", val: 0.10, icon: "🎗️", desc: "공격력 10% 증가", tier: 1 },
+  "자뭉열매":   { type: "hp_flat", val: 1000, icon: "🍒", desc: "최대 체력 +1000", tier: 1 },
+  "구애스카프": { type: "spd_flat", val: 15,   icon: "🧣", desc: "스피드 +15 (선공 유리)", tier: 1 },
+  "방어보석":   { type: "def_pct", val: 0.15, icon: "💠", desc: "받는 피해 15% 감소", tier: 1 },
 
-  // --- [티어 2: 속성] ---
-  "불꽃구슬":   { type: "type_boost", val: 0.15, cond: "불", icon: "🔥", desc: "[불] 속성 기술 위력 15% 증가" },
-  "물방울구슬": { type: "type_boost", val: 0.15, cond: "물", icon: "💧", desc: "[물] 속성 기술 위력 15% 증가" },
-  "기적의씨":   { type: "type_boost", val: 0.15, cond: "풀", icon: "🌱", desc: "[풀] 속성 기술 위력 15% 증가" },
-  "자석":       { type: "type_boost", val: 0.15, cond: "전기", icon: "🧲", desc: "[전기] 속성 기술 위력 15% 증가" },
-  "녹지않는얼음":{ type: "type_boost", val: 0.15, cond: "얼음", icon: "🧊", desc: "[얼음] 속성 기술 위력 15% 증가" },
-  "부드러운모래":{ type: "type_boost", val: 0.15, cond: "땅", icon: "🏜️", desc: "[땅] 속성 기술 위력 15% 증가" },
-  "날카로운부리":{ type: "type_boost", val: 0.15, cond: "비행", icon: "🪶", desc: "[비행] 속성 기술 위력 15% 증가" },
-  "용의이빨":   { type: "type_boost", val: 0.15, cond: "드래곤", icon: "🦷", desc: "[드래곤] 속성 기술 위력 15% 증가" },
-  "검은안경":   { type: "type_boost", val: 0.15, cond: "악", icon: "🕶️", desc: "[악]/고스트 등 위력 15% 증가" },
+  // =================================================================
+  // [Tier 2] 일반 속성 강화 (15%) - 빠진 속성 전부 추가
+  // =================================================================
+  "불꽃구슬":   { type: "type_boost", val: 0.15, cond: "불", icon: "🔥", desc: "[불] 기술 위력 15% 증가", tier: 2 },
+  "물방울구슬": { type: "type_boost", val: 0.15, cond: "물", icon: "💧", desc: "[물] 기술 위력 15% 증가", tier: 2 },
+  "기적의씨":   { type: "type_boost", val: 0.15, cond: "풀", icon: "🌱", desc: "[풀] 기술 위력 15% 증가", tier: 2 },
+  "자석":       { type: "type_boost", val: 0.15, cond: "전기", icon: "🧲", desc: "[전기] 기술 위력 15% 증가", tier: 2 },
+  "녹지않는얼음":{ type: "type_boost", val: 0.15, cond: "얼음", icon: "🧊", desc: "[얼음] 기술 위력 15% 증가", tier: 2 },
+  "부드러운모래":{ type: "type_boost", val: 0.15, cond: "땅", icon: "🏜️", desc: "[땅] 기술 위력 15% 증가", tier: 2 },
+  "날카로운부리":{ type: "type_boost", val: 0.15, cond: "비행", icon: "🪶", desc: "[비행] 기술 위력 15% 증가", tier: 2 },
+  "용의이빨":   { type: "type_boost", val: 0.15, cond: "드래곤", icon: "🦷", desc: "[드래곤] 기술 위력 15% 증가", tier: 2 },
+  "검은안경":   { type: "type_boost", val: 0.15, cond: "악", icon: "🕶️", desc: "[악] 기술 위력 15% 증가", tier: 2 },
+  // [신규 추가]
+  "검은띠":     { type: "type_boost", val: 0.15, cond: "격투", icon: "🥋", desc: "[격투] 기술 위력 15% 증가", tier: 2 },
+  "독바늘":     { type: "type_boost", val: 0.15, cond: "독", icon: "💉", desc: "[독] 기술 위력 15% 증가", tier: 2 },
+  "저주받은부적":{ type: "type_boost", val: 0.15, cond: "고스트", icon: "👻", desc: "[고스트] 기술 위력 15% 증가", tier: 2 },
+  "구부러진스푼":{ type: "type_boost", val: 0.15, cond: "에스퍼", icon: "🥄", desc: "[에스퍼] 기술 위력 15% 증가", tier: 2 },
+  "은빛가루":   { type: "type_boost", val: 0.15, cond: "벌레", icon: "🦋", desc: "[벌레] 기술 위력 15% 증가", tier: 2 },
+  "단단한돌":   { type: "type_boost", val: 0.15, cond: "바위", icon: "🪨", desc: "[바위] 기술 위력 15% 증가", tier: 2 },
+  "금속코트":   { type: "type_boost", val: 0.15, cond: "강철", icon: "🔩", desc: "[강철] 기술 위력 15% 증가", tier: 2 },
+  "실크스카프": { type: "type_boost", val: 0.15, cond: "노말", icon: "🧣", desc: "[노말] 기술 위력 15% 증가", tier: 2 },
+  "페어리참":   { type: "type_boost", val: 0.15, cond: "페어리", icon: "🧚", desc: "[페어리] 기술 위력 15% 증가", tier: 2 },
 
-  // --- [티어 3: 전설 (엔드급 성능)] ---
+  // =================================================================
+  // [Tier 3] 상급 속성 강화 (30%) - NEW!
+  // =================================================================
+  "마그마의돌": { type: "type_boost", val: 0.30, cond: "불", icon: "🌋", desc: "[불] 기술 위력 30% 증가 (상급)", tier: 3 },
+  "심해의물방울":{ type: "type_boost", val: 0.30, cond: "물", icon: "🌊", desc: "[물] 기술 위력 30% 증가 (상급)", tier: 3 },
+  "생명의나무": { type: "type_boost", val: 0.30, cond: "풀", icon: "🌳", desc: "[풀] 기술 위력 30% 증가 (상급)", tier: 3 },
+  "번개플레이트":{ type: "type_boost", val: 0.30, cond: "전기", icon: "⚡", desc: "[전기] 기술 위력 30% 증가 (상급)", tier: 3 },
+  "절대영도":   { type: "type_boost", val: 0.30, cond: "얼음", icon: "❄️", desc: "[얼음] 기술 위력 30% 증가 (상급)", tier: 3 },
+  "대지의힘":   { type: "type_boost", val: 0.30, cond: "땅", icon: "⛰️", desc: "[땅] 기술 위력 30% 증가 (상급)", tier: 3 },
+  "태풍의눈":   { type: "type_boost", val: 0.30, cond: "비행", icon: "🌪️", desc: "[비행] 기술 위력 30% 증가 (상급)", tier: 3 },
+  "역린":       { type: "type_boost", val: 0.30, cond: "드래곤", icon: "🐲", desc: "[드래곤] 기술 위력 30% 증가 (상급)", tier: 3 },
+  "챔피언벨트": { type: "type_boost", val: 0.30, cond: "격투", icon: "🥊", desc: "[격투] 기술 위력 30% 증가 (상급)", tier: 3 },
+  "맹독구슬":   { type: "type_boost", val: 0.30, cond: "독", icon: "🧪", desc: "[독] 기술 위력 30% 증가 (상급)", tier: 3 },
+  "사이코잼":   { type: "type_boost", val: 0.30, cond: "에스퍼", icon: "🔮", desc: "[에스퍼] 기술 위력 30% 증가 (상급)", tier: 3 },
+
+  // =================================================================
+  // [Tier 4] 전설의 유물 (구 Tier 3 + 신규 아이템)
+  // =================================================================
   
-  // 1. 공격: 40% (유지)
-  "강부장의교육": { type: "atk_pct", val: 0.40, icon: "👺", desc: "공격력 40% 증가 (파괴신)", tier: 3 },
-  
-  // 2. 체력: 30% -> 50% (🔺상향) : 방어 관통 메타에서 살아남기 위함
-  "누누의요리":   { type: "hp_pct",  val: 0.50, icon: "🥘", desc: "최대 체력 50% 증가 (진정한 불사신)", tier: 3 },
-  
-  // 3. 스피드: 80 -> 35 (🔻하향) : 밸런스 붕괴 방지
-  "꾸꾸의탄생":   { type: "spd_flat", val: 35,   icon: "🐣", desc: "스피드 +35 (압도적인 속도)", tier: 3 },
-  
-  // 4. 방어: 40% -> 25% (🔻하향) : 좀비화 방지
-  "민준이지갑":   { type: "def_pct", val: 0.25, icon: "💸", desc: "받는 피해 25% 감소 (절대방어)", tier: 3 },
-  
-  // 5. 레이드 치명타율: 20% -> 35% (🔺상향) : 로또 확률 감소
-  "두둥의안경": { type: "raid_crit_rate", val: 0.35, icon: "👓", desc: "[레이드] 리더 장착 시 팀 치명타율 대폭 증가!", tier: 3 },
-  
-  // 6. 레이드 치명타딜: 5배 -> 3배 (🔻하향) : 딜 독식 방지
-  "해리의마라": { type: "raid_crit_dmg",  val: 3.0,  icon: "🌶", desc: "[레이드] 리더 장착 시 치명타 데미지 3배 적용!", tier: 3 }
+  // [기존 전설]
+  "강부장의교육": { type: "atk_pct", val: 0.40, icon: "👺", desc: "공격력 40% 증가 (파괴신)", tier: 4 },
+  "누누의요리":   { type: "hp_pct",  val: 0.50, icon: "🥘", desc: "최대 체력 50% 증가 (진정한 불사신)", tier: 4 },
+  "꾸꾸의탄생":   { type: "spd_flat", val: 35,   icon: "🐣", desc: "스피드 +35 (압도적인 속도)", tier: 4 },
+  "민준이지갑":   { type: "def_pct", val: 0.25, icon: "💸", desc: "받는 피해 25% 감소 (절대방어)", tier: 4 },
+  "두둥의안경":   { type: "raid_crit_rate", val: 0.35, icon: "👓", desc: "[레이드] 리더 장착 시 팀 치명타율 대폭 증가!", tier: 4 },
+  "해리의마라":   { type: "raid_crit_dmg",  val: 3.0,  icon: "🌶", desc: "[레이드] 리더 장착 시 치명타 데미지 3배 적용!", tier: 4 },
+
+  // ★ [신규 전설]
+  "시싱의멘탈":   { type: "reflect_dmg", val: 0.60, icon: "🧠", desc: "받은 피해의 60%를 상대에게 반사 (가시갑옷)", tier: 4 },
+  "스파게티의지도":{ type: "explore_luck", val: 5.0, icon: "🗺️", desc: "탐험 시 히든 지역(냥치/다코타) 발견 확률 대폭 상승!", tier: 4 }
 };
 
 // -------------------- 🛡️ [보안 강화] 운영자 설정 (지문 인식) --------------------
@@ -6563,10 +6638,10 @@ if (msg === "/슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커
     return;
   }
 
-  // 2. 탐험 메인 명령어
+// 2. 탐험 메인 명령어 (다코타 지역 + 지도 아이템 + 코인 파밍 적용)
   if (msg.indexOf("/탐험") === 0) {
     var now = nowMs();
-    var parts = msg.split(" ").filter(Boolean); // 명령어 분해
+    var parts = msg.split(" ").filter(Boolean);
     
     // ★ [설정] 탐험 소요 시간 (30분)
     var EXPLORE_TIME_MS = 30 * 60 * 1000; 
@@ -6579,7 +6654,7 @@ if (msg === "/슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커
       var pEx = findUserPokemonByUid(u, u.exploration.uid);
       var pName = pEx ? getDisplayName(pEx) : "알 수 없는 포켓몬";
 
-      // 다른 번호를 입력했을 때 경고하기
+      // 다른 번호를 입력했을 때 경고
       var inputUid = parseInt(parts[1], 10);
       if (!isNaN(inputUid) && inputUid !== u.exploration.uid) {
           replier.reply(
@@ -6590,7 +6665,7 @@ if (msg === "/슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커
           return;
       }
      
-      // 1) 아직 시간 안 됨 (상태 확인)
+      // 1) 아직 시간 안 됨
       if (diff > 0) {
         var min = Math.floor(diff / 60000);
         var sec = Math.floor((diff % 60000) / 1000);
@@ -6604,6 +6679,16 @@ if (msg === "/슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커
       }
 
       // 2) ★ [보상 정산 로직]
+      
+      // 장비 효과 체크 (스파게티의지도)
+      var hasMap = (pEx && pEx.equip === "스파게티의지도");
+      var mapBonusMsg = "";
+
+      // 잭팟 지역 체크 (냥치 or 다코타)
+      var isNyangchi = (u.exploration.routes.indexOf("냥치의 방") !== -1);
+      var isDakota = (u.exploration.routes.indexOf("다코타") !== -1);
+      var isJackpot = (isNyangchi || isDakota);
+
       var baseGold = randInt(100000, 300000); 
       var baseExp = randInt(10000, 25000); 
       
@@ -6612,21 +6697,24 @@ if (msg === "/슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커
 
       var bonusMult = 1 + (u.trainerLv * 0.05) + (pEnh * 0.05); 
       
-      var isJackpot = false;
-      if (u.exploration.routes && u.exploration.routes.indexOf("냥치의 방") !== -1) {
-          isJackpot = true;
-          bonusMult *= 5.0; 
+      if (isJackpot) {
+          bonusMult *= 5.0; // 잭팟 지역은 기본 보상 5배
       }
 
       var finalGold = Math.floor(baseGold * bonusMult);
       var finalExp = Math.floor(baseExp * bonusMult);
 
+      // --- [아이템 및 코인 루팅] ---
       var lootCalc = 3; 
       if (pGrade === "S") lootCalc += 2;
       else if (pGrade === "A") lootCalc += 1;
       lootCalc += Math.floor(pEnh / 20); 
       
       if (isJackpot) lootCalc += 3;
+      if (hasMap) {
+          lootCalc += 2; // 지도를 끼면 아이템 발견 개수도 증가
+          mapBonusMsg = "\n🗺️ [스파게티의지도] 효과로 더 많은 보물을 발견했습니다!";
+      }
 
       var lootCount = Math.min(10, lootCalc); 
       lootCount += randInt(-1, 1); 
@@ -6634,21 +6722,40 @@ if (msg === "/슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커
 
       var itemLog = "";
       
+      // ★ [신규] 코인 파밍 로직
+      var coinFound = 0;
+      
+      // 1. 다코타 지역: 코인 확정 대량 획득
+      if (isDakota) {
+          coinFound = randInt(100, 300); // 100~300개
+          itemLog += "🪙 다코타 코인 +" + coinFound + " (지역 보너스!)\n";
+      } 
+      // 2. 일반 지역: 낮은 확률로 소량 획득
+      else if (Math.random() < 0.15) { // 15% 확률
+          coinFound = randInt(3, 10);
+          itemLog += "🪙 다코타 코인 +" + coinFound + " (운 좋게 발견)\n";
+      }
+      
+      if (coinFound > 0) {
+          u.dakotaCoin = (u.dakotaCoin || 0) + coinFound;
+      }
+
+      // 일반 아이템 루팅
       for(var i=0; i<lootCount; i++) {
           var rVal = Math.random();
-          if (isJackpot) rVal *= 0.5; 
+          if (isJackpot) rVal *= 0.5; // 잭팟이면 좋은 템 확률 UP
 
           if (rVal < 0.0005) { 
-              u.godBall++; itemLog += "👑 슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커평범한용태는미친사람갓민수랄부볼 +1 (초대박!!)\n"; 
+              u.godBall = (u.godBall||0)+1; itemLog += "👑 킹갓볼 +1 (초대박!!)\n"; 
           }
           else if (rVal < 0.08) { 
-              u.reroll++; itemLog += "🔄 티어리셋권 +1 (대박!!)\n"; 
+              u.reroll = (u.reroll||0)+1; itemLog += "🔄 티어리셋권 +1 (대박!!)\n"; 
           }
           else if (rVal < 0.15) { 
-              u.cookie++; itemLog += "🍪 두쫀쿠 +1\n"; 
+              u.cookie = (u.cookie||0)+1; itemLog += "🍪 두쫀쿠 +1\n"; 
           }
           else if (rVal < 0.30) { 
-              u.dopaTicket++; itemLog += "💳 도파민강화권 +1\n"; 
+              u.dopaTicket = (u.dopaTicket||0)+1; itemLog += "💳 도파민강화권 +1\n"; 
           }
           else if (rVal < 0.45) { 
               var tAmt = (Math.random() < 0.3) ? 2 : 1;
@@ -6670,23 +6777,24 @@ if (msg === "/슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커
       
       u.gold += finalGold;
       addExpWithLevelUpMsg(u, finalExp);
+      
       var routeStr = u.exploration.routes.join(" ➔ ");
+      var performanceMsg = "평범한 탐험이었습니다.";
+      
+      if (isDakota) performanceMsg = "🏰 [HIDDEN] 전설의 도시 '다코타'를 발견하여 코인을 쓸어담았습니다!";
+      else if (isNyangchi) performanceMsg = "🎰 [JACKPOT] 전설의 '냥치의 방'을 발견하여 보따리를 털어왔습니다!";
+      else if (lootCount >= 7) performanceMsg = "🔥 엄청난 활약을 펼치며 지역을 휩쓸었습니다!";
 
       delete u.exploration; 
       commitSave(true);
       checkAndNotifyTitles(u, replier);
 
-      var performanceMsg = "평범한 탐험이었습니다.";
-      if (isJackpot) performanceMsg = "🎰 [JACKPOT] 전설의 '냥치의 방'을 발견하여 보따리를 털어왔습니다!";
-      else if (lootCount >= 7) performanceMsg = "🔥 " + pGrade + "등급 " + pEnh + "강의 압도적인 스펙으로 지역을 휩쓸었습니다!";
-      else if (lootCount >= 5) performanceMsg = "✨ 훌륭한 능력치 덕분에 많은 보물을 발견했습니다!";
-
       replier.reply(
         "🎉 " + decoName + "님의 #" + pEx.uid + " " + pName + " 탐험 복귀 완료!\n" +
         "━━━━━━━━━━━━━━\n" +
         "🗺️ 이동 경로:\n" + routeStr + "\n\n" +
-        "💬 탐험 보고:\n" + performanceMsg + "\n\n" +
-        "💼 획득 전리품 (" + lootCount + "종):\n" +
+        "💬 탐험 보고:\n" + performanceMsg + mapBonusMsg + "\n\n" +
+        "💼 획득 전리품:\n" +
         "💰 골드: +" + fmtNum(finalGold) + "💰\n" +
         "✨ 경험치: +" + fmtNum(finalExp) + "EXP\n" +
         "📦 아이템:\n" + itemLog +
@@ -6695,6 +6803,93 @@ if (msg === "/슈퍼울트라킹갓엠페러개쩌는하이퍼챌린저페이커
       );
       return;
     }
+
+    // -----------------------------------------------------------
+    // [B] 새로운 탐험 시작 (포켓몬 지정)
+    // -----------------------------------------------------------
+    var targetUid = parseInt(parts[1], 10);
+
+    if (isNaN(targetUid)) {
+      replier.reply(
+        "🎒 누구를 대모험에 보낼까요?\n" +
+        "사용법: /탐험 [포켓몬UID]\n" +
+        "예: /탐험 15\n\n" +
+        "💡 30분 소요 / 강한 포켓몬일수록 아이템을 더 많이 가져옵니다!\n" +
+        "(등급 S/A 및 고강화 포켓몬 추천)"
+      );
+      return;
+    }
+
+    var pStart = findUserPokemonByUid(u, targetUid);
+    if (!pStart) {
+      replier.reply("해당 UID의 포켓몬을 찾을 수 없습니다.");
+      return;
+    }
+
+    // 선발대(체육관/챔피언) 등록 포켓몬 탐험 차단
+    if (u.gymTeam && u.gymTeam.indexOf(pStart.uid) !== -1) {
+        replier.reply("🚫 [탐험 불가] 이 포켓몬은 '체육관 선발대'에 등록되어 있습니다.\n먼저 선발대에서 제외하거나 다른 멤버로 교체해주세요.");
+        return;
+    }
+    if (u.champTeam && u.champTeam.indexOf(pStart.uid) !== -1) {
+        replier.reply("🚫 [탐험 불가] 이 포켓몬은 '챔피언 선발대'에 등록되어 있습니다.\n먼저 선발대에서 제외하거나 다른 멤버로 교체해주세요.");
+        return;
+    }
+
+    var pNameStart = getDisplayName(pStart);
+
+    // ★ [신규] 스파게티의지도 효과 체크
+    var hasMap = (pStart.equip === "스파게티의지도");
+    
+    // 히든 지역 발견 확률 (기본 10% -> 지도 50%)
+    var hiddenProb = hasMap ? 0.5 : 0.1; 
+
+    var routeCount = randInt(3, 5);
+    var routes = [];
+    var possibleRegions = [];
+    
+    // 일반 지역 풀 생성 (냥치, 다코타 제외)
+    for(var k=0; k<REGIONS.length; k++) {
+        if (REGIONS[k].key !== "냥치의 방" && REGIONS[k].key !== "다코타") {
+            possibleRegions.push(REGIONS[k].key);
+        }
+    }
+    
+    for(var r=0; r<routeCount; r++) {
+        routes.push(randomPick(possibleRegions));
+    }
+    
+    // ★ 히든 지역(냥치/다코타) 추가 로직
+    if (Math.random() < hiddenProb) {
+        // 반반 확률로 냥치방 또는 다코타 등장
+        if (Math.random() < 0.5) routes.push("냥치의 방");
+        else routes.push("다코타");
+    }
+
+    u.exploration = {
+      uid: pStart.uid,
+      routes: routes,
+      region: routes[0], 
+      startAt: now,
+      endAt: now + EXPLORE_TIME_MS
+    };
+
+    commitSave(true);
+    
+    var mapMsg = hasMap ? "\n🗺️ '스파게티의지도'를 챙겨서 떠납니다! (히든 확률 UP)" : "";
+
+    replier.reply(
+      "🎒 " + decoName + "님의 #" + pStart.uid + " " + pNameStart + "이(가) 대모험을 떠납니다!\n" +
+      "━━━━━━━━━━━━━━\n" +
+      "📅 예정 경로: " + routes[0] + " 외 " + (routes.length-1) + "곳\n" +
+      "⏳ 소요 시간: 30분\n" +
+      "💪 기대 보상: 등급/강화 수치에 비례" + mapMsg + "\n" +
+      "━━━━━━━━━━━━━━\n" +
+      "👋 \"다녀오겠습니다! 대박 터트리고 올게요!\"\n" +
+      "(탐험 중에는 해당 포켓몬을 사용할 수 없습니다.)"
+    );
+    return;
+ }
 
     // -----------------------------------------------------------
     // [B] 새로운 탐험 시작 (포켓몬 지정)
