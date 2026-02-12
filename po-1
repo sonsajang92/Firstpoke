@@ -1540,11 +1540,10 @@ function simulateBattleLog(aName, aDb, aP, aTLv, bName, bDb, bP, bTLv) {
       }
       finalDmg = Math.max(1, finalDmg);
 
-      // ★ [신규] 반사 데미지 로직 (시싱의멘탈)
+// ★ [수정 필요] 0.60 -> 0.30 으로 변경해야 밸런스가 맞습니다!
       var reflectDmg = 0;
       if (defP_curr.equip === "시싱의멘탈") {
-          // 받은 피해의 60%를 반사 (EQUIP_DB 값 참조)
-          reflectDmg = Math.floor(finalDmg * 0.60);
+          reflectDmg = Math.floor(finalDmg * 0.30); // 0.60에서 수정
       }
 
       // 데미지 적용
