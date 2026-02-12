@@ -1342,38 +1342,36 @@ function calcHP(db, enh, ivHp, equipName) {
 }
 
 // [밸런스 패치 2차] 데미지 계산 (방어 관통 + 상성 극대화)
+// [밸런스 패치] 데미지 계산 (방어 관통 강화)
 function calcDamage(attDb, attEnh, defDb, defEnh, attEquip, defEquip) {
   
-  // 1. 공격 속성 결정 (스마트 로직)
-  // 내 1속성으로 때렸을 때
+  // 1. 상성 배율 계산 (가장 유리한 속성 선택)
   var m1 = typeMultiplierAdjusted(attDb.type1, defDb.type1);
-  // 내 2속성이 있다면 그걸로 때렸을 때
   var m2 = attDb.type2 ? typeMultiplierAdjusted(attDb.type2, defDb.type1) : 0;
   
-  // 둘 중 더 아픈 거 선택
-  var mult = Math.max(m1, m2);
-  
-  // 방어자가 2속성이 있다면? (보정: 공격이 효과가 별로면 뎀감 완화)
+  // 2속성 방어자 체크 (망나뇽은 드래곤/비행 -> 얼음 4배)
   if (defDb.type2) {
-      // (심화 로직을 넣으면 좋지만, 일단 방어자 2속성은 변수로 둠)
-      // 만약 공격이 '효과가 별로(0.95이하)'라면 배율을 조금 올려줌 (너무 약하지 않게)
-      if (mult < 1.0) mult = 0.8; 
+      // typeMultiplierAdjusted는 단일 상성만 보므로, 이중 상성 보정
+      var m1_2 = typeMultiplierAdjusted(attDb.type1, defDb.type2);
+      var m2_2 = attDb.type2 ? typeMultiplierAdjusted(attDb.type2, defDb.type2) : 0;
+      
+      // 곱연산 (4배 약점 구현)
+      m1 = m1 * m1_2; 
+      if (attDb.type2) m2 = m2 * m2_2;
   }
 
+  var mult = Math.max(m1, m2);
+  
+  // 기본 스펙
   var attPid = attDb.id || attDb.pid;
   var defPid = defDb.id || defDb.pid;
-  
-  var aStage = stageBattleMul(attPid);
-  var dStage = stageBattleMul(defPid);
-  
   var aR = rarityBattleMul(attDb.rarity || 2, attPid); 
   var dR = rarityBattleMul(defDb.rarity || 2, defPid);
 
-  // 기본 스탯 계산
-  var atkPower = attDb.basePower * (1 + (attEnh * ATK_ENH_RATE)) * aStage.atk * aR;
-  var defPower = defDb.basePower * (1 + (defEnh * DEF_ENH_RATE)) * dStage.def * dR;
+  var atkPower = attDb.basePower * (1 + (attEnh * ATK_ENH_RATE)) * aR;
+  var defPower = defDb.basePower * (1 + (defEnh * DEF_ENH_RATE)) * dR;
 
-  // [장비 효과 적용]
+  // 장비 스탯
   if (attEquip && EQUIP_DB[attEquip]) {
       var eq = EQUIP_DB[attEquip];
       if (eq.type === "atk_pct") atkPower *= (1 + eq.val);
@@ -1383,34 +1381,29 @@ function calcDamage(attDb, attEnh, defDb, defEnh, attEquip, defEquip) {
           }
       }
   }
-
   if (defEquip && EQUIP_DB[defEquip]) {
       var eq = EQUIP_DB[defEquip];
-      if (eq.type === "def_pct") {
-          defPower *= (1 / (1 - eq.val)); 
-      }
+      if (eq.type === "def_pct") defPower *= (1 / (1 - eq.val)); 
   }
 
-  // ★ [핵심 수정] 상성 우위 시 방어 관통 (죽창)
-  // 배율이 2.5배 이상(상성 우위)이면 상대 방어력을 깍아버림
-  if (mult >= 2.5) {
-      defPower *= 0.4; // 방어력 60% 무시 (파르셀이 망나뇽 뚫음)
-      mult *= 1.3;     // 데미지 배율 30% 추가 증폭
-  } else if (mult >= 1.4) {
-      defPower *= 0.7; // 약우위면 방어력 30% 무시
+  // ★ [죽창 로직] 상성이 유리하면 방어력 무시
+  if (mult >= 4.0) { // 4배 약점 (얼음 vs 망나뇽)
+      defPower *= 0.2; // 방어력 80% 무시 (종잇장 만듦)
+      mult *= 1.5;     // 데미지 50% 추가 증폭
+  } 
+  else if (mult >= 2.0) { // 2배 약점
+      defPower *= 0.5; // 방어력 50% 무시
+      mult *= 1.2;
   }
 
-  // 데미지 공식 (방어력 영향력을 줄이고 공격력 비중 높임)
-  // 기존: atk * (atk / def) -> 제곱 비례라 격차 심함
-  // 수정: atk * (atk / (def + 보정값)) -> 완화
+  // 데미지 공식
   var baseDmg = atkPower * 0.55; 
-  var powerRatio = atkPower / Math.max(1, defPower * 0.8); 
+  var powerRatio = atkPower / Math.max(1, defPower); 
   
   var score = Math.floor(baseDmg * powerRatio * mult);
 
   return { score: Math.max(1, score), mult: mult };
 }
-
 
 // [수정] 스피드(선공/회피)에 장비 반영
 function calcHit(attDb, attP, defDb, defP, trainerLvAtt, trainerLvDef) {
@@ -1452,50 +1445,36 @@ function calcHit(attDb, attP, defDb, defP, trainerLvAtt, trainerLvDef) {
 
 
 // [수정] 배틀 로그 시뮬레이터 (닉네임 표시 & 뮤츠/뮤 버프 연결)
+// [수정됨] 배틀 로그 시뮬레이터 (장비 스피드 반영 + 선공 확정 로직)
 function simulateBattleLog(aName, aDb, aP, aTLv, bName, bDb, bP, bTLv) {
-  // 1. 체력 및 스탯 세팅 (장비 반영)
+  // 1. 체력 세팅
   var aMax = calcHP(aDb, aP.enh, aP.ivHp || 0, aP.equip);
   var bMax = calcHP(bDb, bP.enh, bP.ivHp || 0, bP.equip);
   var aHP = aMax;
   var bHP = bMax;
 
-  // 실전 공격력 (로그 표시용 & 버프 적용)
-  function getRealAtk(db, p) {
-    var base = db.basePower;
-    var enhBonus = 1 + (p.enh * 0.085);
-    var ivBonus = 1 + ((p.ivStr || 0) * 0.015);
-    
-    // ★ 여기서 ID(db.id)를 넘겨서 뮤/뮤츠인지 확인합니다!
-    var rMul = rarityBattleMul(db.rarity || 2, db.id); 
-    
-    var sMul = stageBattleMul(db.id).atk;
-    var val = base * enhBonus * ivBonus * rMul * sMul;
-    
-    if (p.shiny) val *= 1.1; 
-    
-    // 장비 공% 반영 (로그용 단순 계산)
-    if (p.equip && EQUIP_DB[p.equip] && EQUIP_DB[p.equip].type === "atk_pct") {
-        val *= (1 + EQUIP_DB[p.equip].val);
-    }
-
-    return Math.floor(val);
+  // 2. 실전 스피드 계산 (장비 포함)
+  function getRealSpd(p) {
+      var s = (p.ivSpd || 0); // 기본 잠재력
+      if (p.equip && EQUIP_DB[p.equip] && EQUIP_DB[p.equip].type === "spd_flat") {
+          s += EQUIP_DB[p.equip].val; // 장비빨 추가 (꾸꾸 +80)
+      }
+      return s;
   }
+  var aSpd = getRealSpd(aP);
+  var bSpd = getRealSpd(bP);
 
-  var aRealAtk = getRealAtk(aDb, aP);
-  var bRealAtk = getRealAtk(bDb, bP);
+  // 3. 선공 결정 (스피드 높은 쪽이 100% 선공)
+  var aTurn = false;
+  if (aSpd > bSpd) aTurn = true;
+  else if (aSpd < bSpd) aTurn = false;
+  else aTurn = (Math.random() < 0.5); // 동점일 때만 랜덤
 
-  // ★ 이름 표시 개선: "[닉네임] 포켓몬명"
+  // 4. 이름 세팅
   var aPokeName = "[" + aName + "] " + getDisplayName(aP);
   var bPokeName = "[" + bName + "] " + getDisplayName(bP);
-  
-  // 로그 내에서는 너무 기니까, 적당히 줄여서 쓸 변수 (지금은 그대로 사용)
   var aShort = aPokeName; 
   var bShort = bPokeName;
-
-  // 선공 결정
-  var spdAdvantage = ((aP.ivSpd || 0) - (bP.ivSpd || 0)) * 0.02;
-  var aFirst = 0.50 + clamp((aP.enh - bP.enh) * 0.02 + spdAdvantage, -0.2, 0.2);
-  var aTurn = (Math.random() < aFirst);
 
   // 로그 헤더
   var logHeader = "";
@@ -1503,10 +1482,10 @@ function simulateBattleLog(aName, aDb, aP, aTLv, bName, bDb, bP, bTLv) {
   var bE = enhLabel(bP.enh);
 
   logHeader += "⚔️ " + aName + ": " + getDisplayName(aP) + " " + aE + "\n";
-  logHeader += "(HP " + aMax + " / 공 " + aRealAtk + " / 스 " + (aP.ivSpd||0) + ")\n";
+  logHeader += "(HP " + aMax + " / 스피드 " + aSpd + ")\n"; // 로그에 스피드 표시
   logHeader += "🛡️ " + bName + ": " + getDisplayName(bP) + " " + bE + "\n";
-  logHeader += "(HP " + bMax + " / 공 " + bRealAtk + " / 스 " + (bP.ivSpd||0) + ")\n\n";
-  logHeader += (aTurn ? (aShort + "의 선공!\n\n") : (bShort + "의 선공!\n\n"));
+  logHeader += "(HP " + bMax + " / 스피드 " + bSpd + ")\n\n";
+  logHeader += (aTurn ? (aShort + "의 선공! ⚡\n\n") : (bShort + "의 선공! ⚡\n\n"));
 
   var turn = 1;
   var MAX_SAFE_TURNS = 200;
@@ -1524,7 +1503,7 @@ function simulateBattleLog(aName, aDb, aP, aTLv, bName, bDb, bP, bTLv) {
     var attLv = aTurn ? aTLv : bTLv;
     var defLv = aTurn ? bTLv : aTLv;
 
-    // 명중/회피 계산
+    // 명중/회피/데미지 계산
     var hit = calcHit(attDb, attP_curr, defDb, defP_curr, attLv, defLv);
     var thisTurnStr = "";
 
@@ -1533,11 +1512,13 @@ function simulateBattleLog(aName, aDb, aP, aTLv, bName, bDb, bP, bTLv) {
     } else {
       var finalDmg = hit.dmg;
       
-      // 희귀도/턴 보정 (여기는 전투 흐름 보정)
-      var mod = getRarityBattleModifier(attDb, turn); 
+      // 희귀도/턴 보정
+      var hpRate = (aTurn ? bHP/bMax : aHP/aMax);
+      var mod = getRarityBattleModifier(attDb, turn, hpRate); 
       finalDmg = Math.floor(finalDmg * mod.atk);
+      
       if(defDb.rarity) {
-          var dmod = getRarityBattleModifier(defDb, turn);
+          var dmod = getRarityBattleModifier(defDb, turn, hpRate);
           finalDmg = Math.floor(finalDmg * dmod.def);
       }
       finalDmg = Math.max(1, finalDmg);
@@ -1552,7 +1533,6 @@ function simulateBattleLog(aName, aDb, aP, aTLv, bName, bDb, bP, bTLv) {
       var eff = typeEffectText(hit.mult);
       if (eff) thisTurnStr += eff + "\n";
       
-      // HP 표시
       thisTurnStr += "HP: " + Math.max(0, aHP) + " vs " + Math.max(0, bHP);
     }
     
@@ -1564,7 +1544,7 @@ function simulateBattleLog(aName, aDb, aP, aTLv, bName, bDb, bP, bTLv) {
     }
 
     turnLogs.push(thisTurnStr);
-    aTurn = !aTurn;
+    aTurn = !aTurn; // 턴 교체
     turn++;
   }
 
@@ -2879,17 +2859,15 @@ function buildBattlePowerRanking(d, topN, sender) {
   return { rows: rows, myIdx: myIdx, topN: topN };
 }
 
-// 🎒 [장비] 아이템 데이터베이스
-// type: atk_pct(공%), hp_flat(체력+), def_pct(방%), spd_flat(속도+)
-//       type_boost(속성뎀증)
+// 🎒 [장비] 아이템 데이터베이스 (전설템 밸런스 최종: 너프/버프 통합)
 var EQUIP_DB = {
-  // --- [티어 1] ---
+  // --- [티어 1: 일반] ---
   "힘의머리띠": { type: "atk_pct", val: 0.10, icon: "🎗️", desc: "공격력 10% 증가" },
   "자뭉열매":   { type: "hp_flat", val: 1000, icon: "🍒", desc: "최대 체력 +1000" },
   "구애스카프": { type: "spd_flat", val: 15,   icon: "🧣", desc: "스피드 +15 (선공 유리)" },
   "방어보석":   { type: "def_pct", val: 0.15, icon: "💠", desc: "받는 피해 15% 감소" },
 
-  // --- [티어 2] ---
+  // --- [티어 2: 속성] ---
   "불꽃구슬":   { type: "type_boost", val: 0.15, cond: "불", icon: "🔥", desc: "[불] 속성 기술 위력 15% 증가" },
   "물방울구슬": { type: "type_boost", val: 0.15, cond: "물", icon: "💧", desc: "[물] 속성 기술 위력 15% 증가" },
   "기적의씨":   { type: "type_boost", val: 0.15, cond: "풀", icon: "🌱", desc: "[풀] 속성 기술 위력 15% 증가" },
@@ -2900,14 +2878,25 @@ var EQUIP_DB = {
   "용의이빨":   { type: "type_boost", val: 0.15, cond: "드래곤", icon: "🦷", desc: "[드래곤] 속성 기술 위력 15% 증가" },
   "검은안경":   { type: "type_boost", val: 0.15, cond: "악", icon: "🕶️", desc: "[악]/고스트 등 위력 15% 증가" },
 
-  // --- [티어 3: 엔드급 (압도적 성능)] ---
+  // --- [티어 3: 전설 (엔드급 성능)] ---
+  
+  // 1. 공격: 40% (유지)
   "강부장의교육": { type: "atk_pct", val: 0.40, icon: "👺", desc: "공격력 40% 증가 (파괴신)", tier: 3 },
-  // ★ [변경] 체력 깡수치 -> 퍼센트 증가 (후반 효율 극대화)
-  "누누의요리":   { type: "hp_pct",  val: 0.30, icon: "🥘", desc: "최대 체력 30% 증가 (불사신)", tier: 3 },
-  "꾸꾸의탄생":   { type: "spd_flat", val: 80,   icon: "🐣", desc: "스피드 +80 (선공 확정)", tier: 3 },
-  "민준이지갑":   { type: "def_pct", val: 0.40, icon: "💸", desc: "받는 피해 40% 감소 (절대방어)", tier: 3 },
-  "두둥의안경": { type: "raid_crit_rate", val: 0.20, icon: "👓", desc: "[레이드] 리더 장착 시 팀 치명타율 +20% 증가", tier: 3 },
-  "해리의마라": { type: "raid_crit_dmg",  val: 5.0,  icon: "🌶", desc: "[레이드] 리더 장착 시 치명타 데미지 5배 적용!", tier: 3 }
+  
+  // 2. 체력: 30% -> 50% (🔺상향) : 방어 관통 메타에서 살아남기 위함
+  "누누의요리":   { type: "hp_pct",  val: 0.50, icon: "🥘", desc: "최대 체력 50% 증가 (진정한 불사신)", tier: 3 },
+  
+  // 3. 스피드: 80 -> 35 (🔻하향) : 밸런스 붕괴 방지
+  "꾸꾸의탄생":   { type: "spd_flat", val: 35,   icon: "🐣", desc: "스피드 +35 (압도적인 속도)", tier: 3 },
+  
+  // 4. 방어: 40% -> 25% (🔻하향) : 좀비화 방지
+  "민준이지갑":   { type: "def_pct", val: 0.25, icon: "💸", desc: "받는 피해 25% 감소 (절대방어)", tier: 3 },
+  
+  // 5. 레이드 치명타율: 20% -> 35% (🔺상향) : 로또 확률 감소
+  "두둥의안경": { type: "raid_crit_rate", val: 0.35, icon: "👓", desc: "[레이드] 리더 장착 시 팀 치명타율 대폭 증가!", tier: 3 },
+  
+  // 6. 레이드 치명타딜: 5배 -> 3배 (🔻하향) : 딜 독식 방지
+  "해리의마라": { type: "raid_crit_dmg",  val: 3.0,  icon: "🌶", desc: "[레이드] 리더 장착 시 치명타 데미지 3배 적용!", tier: 3 }
 };
 
 // -------------------- 🛡️ [보안 강화] 운영자 설정 (지문 인식) --------------------
