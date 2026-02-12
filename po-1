@@ -129,13 +129,12 @@ var DAKOTA_PRICE_DDAL = 500;     // 딸기쿠키 (+3강 확정의 가치)
 var DAKOTA_PRICE_NUT = 1000;     // 황금열매 (졸업급 스펙)
 var DAKOTA_PRICE_PAINT = 2500;   // 황금페인트 (부의 상징)
 
-// 2. 상자깡 확률 설정 (총합 1.0)
-// 꽝 대신 '파편'이 나오므로, 장비 획득 확률은 좀 낮아도 됩니다.
-var BOX_PROB_TIER_3 = 0.01; // 👑 전설 (1%) - 엔드급
-var BOX_PROB_TIER_2 = 0.19; // 🔹 희귀 (19%)
-var BOX_PROB_TIER_1 = 0.40; // ⚪ 일반 (40%)
-// 나머지 40% = '상자파편' (10개 모으면 상자 1개)
-
+// 2. 상자깡 확률 설정 (4티어 체제)
+// 👑 전설(0.5%) / 🌟 상급(4.5%) / 🔹 희귀(15%) / ⚪ 일반(40%) / 🧩 파편(40%)
+var BOX_PROB_TIER_4 = 0.005; 
+var BOX_PROB_TIER_3 = 0.045; 
+var BOX_PROB_TIER_2 = 0.15; 
+var BOX_PROB_TIER_1 = 0.40;
 
 
 
@@ -4983,7 +4982,7 @@ normalizeUserData(u);
 
 
 
-  // -------------------- [수정됨] 내가방 (다코타 아이템 섹션 추가) --------------------
+// -------------------- [수정됨] 내가방 (4티어 전설 강조 적용) --------------------
   if (msg === "/내가방") {
     var list = "";
     list += "🔴 몬스터볼: " + fmtNum(u.ball) + "개\n";
@@ -4995,11 +4994,10 @@ normalizeUserData(u);
     list += "🎫 이동티켓: " + fmtNum(u.ticket) + "장\n";
     list += "🔄 티어리셋권: " + fmtNum(u.reroll) + "장";
 
-    // [신규] 다코타 아이템 목록 (u.items에 있지만 EQUIP_DB에는 없는 것들)
+    // [신규] 다코타 아이템 목록
     var dakotaList = [];
     var specialItems = ["장비상자", "상자파편", "딸기쿠키", "황금열매", "황금페인트"];
     
-    // 안전장치
     if (!u.items) u.items = {};
 
     if ((u.items["장비상자"]||0) > 0) dakotaList.push("📦 장비상자: " + u.items["장비상자"] + "개");
@@ -5012,26 +5010,50 @@ normalizeUserData(u);
         list += "\n\n[다코타 보관함]\n" + dakotaList.join("\n");
     }
 
-    // [기존] 장착 장비 목록 (EQUIP_DB에 있는 것만)
+    // [기존] 장착 장비 목록 (EQUIP_DB 기준)
     var equipList = [];
+    
+    // 정렬을 위해 티어별로 분리
+    var t4=[], t3=[], t2=[], t1=[];
+
     for (var key in u.items) {
-        // 다코타 아이템은 위에서 처리했으니 건너뜀
         if (specialItems.indexOf(key) !== -1) continue; 
+        if (u.items[key] <= 0) continue;
+
+        var item = EQUIP_DB[key];
+        if (!item) continue; 
         
-        if (u.items[key] > 0) {
-            var item = EQUIP_DB[key];
-            if (!item) continue; 
-            
-            var icon = item.icon || "🛡️";
-            var dName = key;
-            if (item.tier === 3) dName = "『" + dName + "』"; // 티어3 강조
-            
-            equipList.push(icon + " " + dName + ": " + u.items[key] + "개");
+        var icon = item.icon || "🛡️";
+        var dName = key;
+        var count = u.items[key];
+        var tier = item.tier || 1;
+        var displayStr = "";
+
+        // ★ [핵심] 티어별 강조 효과
+        if (tier === 4) {
+            dName = "👑『" + dName + "』👑"; // 4티어: 왕관 + 괄호
+            displayStr = icon + " " + dName + ": " + count + "개";
+            t4.push(displayStr);
+        }
+        else if (tier === 3) {
+            dName = "『" + dName + "』"; // 3티어: 괄호
+            displayStr = icon + " " + dName + ": " + count + "개";
+            t3.push(displayStr);
+        }
+        else if (tier === 2) {
+            displayStr = icon + " " + dName + ": " + count + "개";
+            t2.push(displayStr);
+        }
+        else {
+            displayStr = icon + " " + dName + ": " + count + "개";
+            t1.push(displayStr);
         }
     }
     
-    if (equipList.length > 0) {
-        list += "\n\n[장비 보관함]\n" + equipList.join("\n");
+    var allEquips = t4.concat(t3, t2, t1); // 높은 티어부터 정렬
+
+    if (allEquips.length > 0) {
+        list += "\n\n[장비 보관함]\n" + allEquips.join("\n");
     } else {
         list += "\n\n[장비 보관함]\n(비어있음)";
     }
@@ -5040,20 +5062,14 @@ normalizeUserData(u);
     return;
   }
 
-   // ==================================================================
-  // 🎒 [통합] 아이템 사용 시스템 (상자깡 버그 수정판)
-  // ==================================================================
-  if (msg.indexOf("/사용") === 0) {
-    var parts = msg.split(" ").filter(Boolean);
-    var itemCmd = parts[1]; 
-    
-    // -----------------------------------------------------------
-    // [A] 다코타의 보물상자 (가챠 & 파편 시스템)
+// -----------------------------------------------------------
+    // [A] 다코타의 보물상자 (4티어 적용 & 전역 설정 연동)
     // -----------------------------------------------------------
     if (itemCmd === "상자" || itemCmd === "보물상자" || itemCmd === "장비상자") {
         var qty = parseInt(parts[2], 10); 
         if (isNaN(qty)) qty = 1;
         
+        // 가방 체크
         if (!u.items || !u.items["장비상자"] || u.items["장비상자"] < qty) {
             replier.reply("🎁 '장비상자'가 부족합니다.\n보유: " + (u.items ? (u.items["장비상자"]||0) : 0) + "개");
             return;
@@ -5067,26 +5083,30 @@ normalizeUserData(u);
         var getItems = {}; 
         var fragmentCount = 0; 
 
-        // ★ [수정] 티어별 아이템 분류 로직 강화
-        var t1 = [], t2 = [], t3 = [];
+        // 4티어 체제 분류
+        var t1 = [], t2 = [], t3 = [], t4 = [];
         
         for (var k in EQUIP_DB) {
             var item = EQUIP_DB[k];
             var tier = item.tier || 1;
 
-            // [자동 보정] 'type_boost'(속성구슬)는 2티어로 취급!
-            if (!item.tier && item.type === "type_boost") {
-                tier = 2;
-            }
-
-            if (tier === 3) t3.push(k);
-            else if (tier === 2) t2.push(k);
-            else t1.push(k);
+            if (tier === 4) t4.push(k);      // 전설
+            else if (tier === 3) t3.push(k); // 상급
+            else if (tier === 2) t2.push(k); // 일반 속성
+            else t1.push(k);                 // 일반
         }
 
-        // 안전장치: 혹시라도 배열이 비어있으면 1티어로 채움 (에러 방지)
+        // 안전장치
         if (t2.length === 0) t2 = t1.slice();
-        if (t3.length === 0) t3 = t1.slice();
+        if (t3.length === 0) t3 = t2.slice();
+        if (t4.length === 0) t4 = t3.slice();
+
+        // ★ [핵심] 맨 위에서 설정한 변수를 가져와서 씁니다.
+        // 나중에 확률 바꾸고 싶으면 맨 위 숫자만 고치면 됩니다!
+        var P_T4 = BOX_PROB_TIER_4;
+        var P_T3 = BOX_PROB_TIER_3;
+        var P_T2 = BOX_PROB_TIER_2;
+        var P_T1 = BOX_PROB_TIER_1;
 
         // 뽑기 진행
         for (var i=0; i<qty; i++) {
@@ -5094,22 +5114,27 @@ normalizeUserData(u);
             var picked = "";
             var grade = "";
 
-            // ① 전설 (3%)
-            if (roll < BOX_PROB_TIER_3) { 
-                picked = t3[Math.floor(Math.random() * t3.length)];
-                grade = "👑";
+            // ① 4티어 (전설)
+            if (roll < P_T4) { 
+                picked = t4[Math.floor(Math.random() * t4.length)];
+                grade = "👑[전설]";
             } 
-            // ② 희귀 (17%)
-            else if (roll < (BOX_PROB_TIER_3 + BOX_PROB_TIER_2)) { 
+            // ② 3티어 (상급)
+            else if (roll < (P_T4 + P_T3)) { 
+                picked = t3[Math.floor(Math.random() * t3.length)];
+                grade = "🌟[상급]";
+            } 
+            // ③ 2티어 (속성)
+            else if (roll < (P_T4 + P_T3 + P_T2)) { 
                 picked = t2[Math.floor(Math.random() * t2.length)];
                 grade = "🔹";
             } 
-            // ③ 일반 (40%)
-            else if (roll < (BOX_PROB_TIER_3 + BOX_PROB_TIER_2 + BOX_PROB_TIER_1)) { 
+            // ④ 1티어 (일반)
+            else if (roll < (P_T4 + P_T3 + P_T2 + P_T1)) { 
                 picked = t1[Math.floor(Math.random() * t1.length)];
                 grade = "⚪";
             } 
-            // ④ 파편 (나머지 40%)
+            // ⑤ 파편 (꽝)
             else {
                 fragmentCount++;
                 continue; 
@@ -5130,6 +5155,7 @@ normalizeUserData(u);
             u.items["상자파편"] = (u.items["상자파편"] || 0) + fragmentCount;
             resultLog += "🧩 상자파편 +" + fragmentCount + "개\n";
             
+            // 파편 10개 -> 상자 1개 자동 교환
             if (u.items["상자파편"] >= 10) {
                 autoBox = Math.floor(u.items["상자파편"] / 10);
                 u.items["상자파편"] %= 10;
@@ -5341,7 +5367,83 @@ normalizeUserData(u);
     return;
   }
 
- 
+// ==================================================================
+  // ♻️ [신규] 장비 분해 (갈갈) 시스템 (이름 표시 + 랜덤 대박)
+  // ==================================================================
+  if (msg.indexOf("/분해") === 0 || msg.indexOf("/갈갈") === 0) {
+      var parts = msg.split(" ").filter(Boolean);
+      var itemName = parts[1];
+      var qty = parseInt(parts[2], 10);
+
+      // 입력값 검증
+      if (!itemName || isNaN(qty) || qty <= 0) {
+          replier.reply("♻️ 사용법: /분해 [아이템명] [수량]\n예: /분해 힘의머리띠 5\n\n(잉여 장비를 갈아서 '상자파편'을 획득합니다.)");
+          return;
+      }
+
+      // 1. 장비 DB에 있는 물건인지 확인
+      var itemInfo = EQUIP_DB[itemName];
+      if (!itemInfo) {
+          replier.reply("🚫 " + sender + "님, 분해할 수 없는 아이템이거나 존재하지 않는 이름입니다.");
+          return;
+      }
+
+      // 2. 보유 수량 체크
+      if (!u.items || !u.items[itemName] || u.items[itemName] < qty) {
+          replier.reply("🚫 " + sender + "님, 보유 수량이 부족합니다.\n현재: " + (u.items ? (u.items[itemName]||0) : 0) + "개");
+          return;
+      }
+
+      // 3. 분해 보상 책정 (티어별 랜덤 범위 적용)
+      var tier = itemInfo.tier || 1;
+      var minF = 1, maxF = 1;
+
+      // 티어별 파편 획득 범위 설정
+      if (tier === 1)      { minF = 1;  maxF = 3; }   // 1티어
+      else if (tier === 2) { minF = 2;  maxF = 5; }   // 2티어
+      else if (tier === 3) { minF = 5;  maxF = 10; }  // 3티어
+      else if (tier === 4) { minF = 30; maxF = 200; } // 4티어 (전설)
+
+      var totalFrag = 0;
+      
+      // 개별 아이템마다 주사위를 따로 굴림
+      for(var i=0; i<qty; i++) {
+          totalFrag += randInt(minF, maxF);
+      }
+
+      // 4. 실행 (아이템 차감)
+      u.items[itemName] -= qty;
+      if (u.items[itemName] <= 0) delete u.items[itemName];
+
+      // 파편 지급
+      if (!u.items["상자파편"]) u.items["상자파편"] = 0;
+      u.items["상자파편"] += totalFrag;
+
+      // 5. 파편 -> 상자 자동 합성 로직
+      var autoBox = 0;
+      if (u.items["상자파편"] >= 10) {
+          autoBox = Math.floor(u.items["상자파편"] / 10);
+          u.items["상자파편"] %= 10;
+          
+          if (!u.items["장비상자"]) u.items["장비상자"] = 0;
+          u.items["장비상자"] += autoBox;
+      }
+
+      commitSave(true);
+
+      // ★ [수정됨] 이름(sender) 명시
+      var out = "♻️ " + sender + "님, 장비 분해 완료!\n" +
+                "📉 소모: " + itemName + " -" + qty + "개\n" +
+                "📈 획득: 🧩 상자파편 +" + totalFrag + "개\n" +
+                "(개당 " + minF + "~" + maxF + "개 랜덤 획득)";
+
+      if (autoBox > 0) {
+          out += "\n\n🎁 파편이 모여 [장비상자 +" + autoBox + "]개로 자동 합성되었습니다!";
+      }
+
+      replier.reply(out);
+      return;
+  }
   
   // -------------------- [수정됨] /내포켓몬 (아이콘 적용 Ver.) --------------------
   if (msg === "/내포켓몬") {
