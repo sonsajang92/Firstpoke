@@ -113,6 +113,8 @@ var BATTLE_MIN_ENH = 20; // 5 -> 20
 // ==================== [레이드] 월드 보스 설정 ====================
 // 1. 기본 체력 (관리자 소환 시 숫자 안 적으면 적용됨)
 var RAID_BOSS_DEFAULT_HP = 100000000; // 1억
+var RAID_RANDOM_SPAWN_PROB = 0.0008;         // 메시지당 0.08% 확률
+var RAID_RANDOM_SPAWN_COOLDOWN_MS = 60 * 60 * 1000; // 돌발 레이드 최소 간격 60분
 
 // 2. ★ 레이드 제한 시간 (히든/관리자 공통 적용)
 var RAID_DURATION_MS = 40 * 60 * 1000; // 40분 (집중 타임!)
@@ -123,7 +125,6 @@ var RAID_FINISHER_PROB = 0.002;   // 0.2% (매우매우 낮은 확률)
 var RAID_FINISHER_MULT = 12;      // 필살기 배율
 var RAID_VIP_HEAL_COST = 10000000;   // /치료 비용 (1천만 골드)
 var RAID_VIP_HEAL_REMAIN_MS = 5 * 1000;   // VIP 치료 후 남은 부상 시간 5초
-
 
 // ==================== [다코타 암시장] 가격 및 확률 설정 (인플레이션 패치) ====================
 
@@ -4144,7 +4145,47 @@ function response(room, msg, sender, isGroupChat, replier, imageDB) {
     );
     return;
   }
+// ==================================================================
+  // 🎲 [신규] 돌발 레이드: 일반 채팅 중 낮은 확률로 자동 소환
+  // ==================================================================
+  if (!d.worldBoss || !d.worldBoss.active) {
+    if (typeof d.lastRandomRaidSpawnAt !== "number") d.lastRandomRaidSpawnAt = 0;
 
+    var nowRandomRaid = nowMs();
+    var canRandomSpawn = (nowRandomRaid - d.lastRandomRaidSpawnAt) >= RAID_RANDOM_SPAWN_COOLDOWN_MS;
+
+    if (canRandomSpawn && Math.random() < RAID_RANDOM_SPAWN_PROB) {
+      var randomPool = [];
+      for (var rk in HIDDEN_RAIDS) randomPool.push(HIDDEN_RAIDS[rk]);
+      var rInfo = randomPool[randInt(0, randomPool.length - 1)];
+
+      var rHp = rInfo.hp * 10000000;
+      d.worldBoss = {
+        active: true,
+        name: rInfo.name,
+        lv: rInfo.lv,
+        maxHp: rHp,
+        curHp: rHp,
+        img: rInfo.img,
+        startTime: nowRandomRaid,
+        endTime: nowRandomRaid + RAID_DURATION_MS,
+        logs: {},
+        rewardPool: 0,
+        lastHitter: null
+      };
+      d.lastRandomRaidSpawnAt = nowRandomRaid;
+      commitSave(true);
+
+      replier.reply(
+        "🎲 [레이드 출현] 긴급 경보!!!\n" +
+        "누군가의 채팅이 세계선을 흔들었습니다...\n\n" +
+        "👹 보스: Lv." + rInfo.lv + " " + rInfo.name + " " + rInfo.img + "\n" +
+        "❤️ 체력: " + fmtNum(rHp) + "\n" +
+        "⏳ 제한시간: " + (RAID_DURATION_MS / 1000 / 60) + "분\n" +
+        "⚔️ '/레이드'로 즉시 참가하세요!"
+      );
+    }
+  }
   // ==================================================================
   // 👑 [관리자] 통합 시스템 (레이드 + 장비지급 + 리팩토링)
   // ==================================================================
