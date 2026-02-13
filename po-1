@@ -121,6 +121,8 @@ var RAID_DURATION_MS = 40 * 60 * 1000; // 40분 (집중 타임!)
 var RAID_COOLDOWN_MS = 2 * 60 * 1000;
 var RAID_FINISHER_PROB = 0.002;   // 0.2% (매우매우 낮은 확률)
 var RAID_FINISHER_MULT = 12;      // 필살기 배율
+var RAID_VIP_HEAL_COST = 10000000;   // /치료 비용 (1천만 골드)
+var RAID_VIP_HEAL_REMAIN_MS = 5 * 1000;   // VIP 치료 후 남은 부상 시간 5초
 
 
 // ==================== [다코타 암시장] 가격 및 확률 설정 (인플레이션 패치) ====================
@@ -8385,6 +8387,37 @@ if (msg === "/챔피언 도전") {
           "⏳ 남은 시간: " + min + "분\n\n" +
           "🏆 [딜 미터기 TOP 3]\n" + rankTxt + "\n" +
           "👉 참여: '/레이드' 입력 (문제 풀고 공격!)"
+      );
+      return;
+  }
+  // 1.5 [신규] VIP 치료: 부상 쿨타임 2분 -> 5초로 단축
+  if (msg === "/치료") {
+      var nowHeal = nowMs();
+      var remainHeal = RAID_COOLDOWN_MS - (nowHeal - u.lastRaidAt);
+
+      if (remainHeal <= 0) {
+          replier.reply("✅ " + decoName + "님은 현재 치료가 필요하지 않습니다.");
+          return;
+      }
+
+      if (remainHeal <= RAID_VIP_HEAL_REMAIN_MS) {
+          replier.reply("⏱️ 이미 거의 회복되었습니다.\n(남은 시간: " + Math.ceil(remainHeal / 1000) + "초)");
+          return;
+      }
+
+      if (u.gold < RAID_VIP_HEAL_COST) {
+          replier.reply("🚫 VIP 치료 비용이 부족합니다.\n필요 골드: " + fmtNum(RAID_VIP_HEAL_COST) + "\n보유 골드: " + fmtNum(u.gold));
+          return;
+      }
+
+      u.gold -= RAID_VIP_HEAL_COST;
+      u.lastRaidAt = nowHeal - (RAID_COOLDOWN_MS - RAID_VIP_HEAL_REMAIN_MS);
+      commitSave(true);
+
+      replier.reply(
+          "💉 [VIP 치료 완료] " + decoName + "님\n" +
+          "-" + fmtNum(RAID_VIP_HEAL_COST) + " 골드 지불\n" +
+          "🚑 간호순 특급 케어로 회복 시간이 5초로 단축되었습니다!"
       );
       return;
   }
