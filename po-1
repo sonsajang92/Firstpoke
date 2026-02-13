@@ -119,6 +119,9 @@ var RAID_DURATION_MS = 40 * 60 * 1000; // 40분 (집중 타임!)
 
 // 3. 부상(쿨타임) 시간 (2분)
 var RAID_COOLDOWN_MS = 2 * 60 * 1000;
+var RAID_FINISHER_PROB = 0.002;   // 0.2% (매우매우 낮은 확률)
+var RAID_FINISHER_MULT = 12;      // 필살기 배율
+
 
 // ==================== [다코타 암시장] 가격 및 확률 설정 (인플레이션 패치) ====================
 
@@ -3966,7 +3969,7 @@ function getRaidPower(u) {
 // ==================================================================
 // ⚔️ [레이드] 실제 공격 실행 함수 (정답 맞췄을 때만 발동)
 // ==================================================================
-function executeRaidAttack(d, room, sender, u, replier, decoName) {
+function executeRaidAttack(d, room, sender, u, replier, decoName, finisherReady) {    
     var b = d.worldBoss;
     
     // 1. 보스 상태 재확인 (문제 푸는 사이에 죽었거나 끝났을 수 있음)
@@ -4006,7 +4009,13 @@ function executeRaidAttack(d, room, sender, u, replier, decoName) {
         dmg = Math.floor(dmg * critMult);   
         hitIcon = "☄️"; hitTag = "치명타" + itemMsg;           
     }
-    
+        // ★ [신규] 필살기: 어려운 승인 코드를 통과한 경우에만 발동
+    var isFinisher = !!finisherReady;
+    if (isFinisher) {
+        dmg = Math.floor(dmg * RAID_FINISHER_MULT);
+        hitIcon = "🌌";
+        hitTag = "필살기 발현" + (isCrit ? " + 치명타" : "");
+    }
     // 3. 보스 피격 및 보상 적립
     b.curHp -= dmg;
     if (!b.logs[sender]) b.logs[sender] = 0;
@@ -8393,10 +8402,11 @@ if (msg === "/챔피언 도전") {
 
       // 정답 맞춤!
       if (inputAns === u.raidCaptcha.ans) {
+           var finisherReady = !!u.raidCaptcha.finisher;
           delete u.raidCaptcha; // 문제 삭제
           
           // ★ 여기서 아까 만든 공격 함수를 호출합니다!
-          executeRaidAttack(d, room, sender, u, replier, decoName);
+          executeRaidAttack(d, room, sender, u, replier, decoName, finisherReady);
           return;
       }
   }
@@ -8433,12 +8443,48 @@ if (msg === "/챔피언 도전") {
           }
       }
 
-      // 문제 생성 (1~9 더하기)
-      var n1 = randInt(1, 9);
-      var n2 = randInt(1, 9);
+      // 문제 생성: 기본은 쉬운 덧셈, 필살기 발현 예정일 때만 어려운 연산
+      var isFinisherQuiz = Math.random() < RAID_FINISHER_PROB;
+      var qText = "";
+      var ans = 0;
+
+      if (!isFinisherQuiz) {
+          var n1 = randInt(1, 9);
+          var n2 = randInt(1, 9);
+          qText = n1 + " + " + n2;
+          ans = n1 + n2;
+      } else {
+          var qType = randInt(1, 4);
+          if (qType === 1) {
+              var a1 = randInt(2, 9);
+              var b1 = randInt(2, 9);
+              var c1 = randInt(1, 9);
+              qText = a1 + " × " + b1 + " - " + c1;
+              ans = (a1 * b1) - c1;
+          } else if (qType === 2) {
+              var a2 = randInt(2, 9);
+              var b2 = randInt(1, 9);
+              var c2 = randInt(1, 9);
+              qText = "(" + a2 + " + " + b2 + ") × " + c2;
+              ans = (a2 + b2) * c2;
+          } else if (qType === 3) {
+              var a3 = randInt(2, 9);
+              var b3 = randInt(1, 9);
+              var c3 = randInt(1, 9);
+              qText = "(" + a3 + " × " + b3 + ") + " + c3;
+              ans = (a3 * b3) + c3;
+          } else {
+              var a4 = randInt(2, 9);
+              var b4 = randInt(1, 9);
+              var c4 = randInt(1, 9);
+              qText = "(" + a4 + " + " + b4 + ") - " + c4;
+              ans = (a4 + b4) - c4;
+          }
+      }
       
       u.raidCaptcha = {
-          ans: n1 + n2,
+          ans: ans,
+          finisher: isFinisherQuiz,
           expire: new Date().getTime() + 15000 // 15초 유효
       };
       
@@ -8446,7 +8492,7 @@ if (msg === "/챔피언 도전") {
 
       replier.reply(
           "🔒 [공격 승인 코드] " + decoName + "님\n" + 
-          "❓  " + n1 + " + " + n2 + " = ?\n" +
+          "❓  " + qText + " = ?\n" +
           "━━━━━━━━━━━━━━\n" +
           "(숫자만 입력 / 제한시간 15초)"
       );
