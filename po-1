@@ -8420,14 +8420,16 @@ if (msg === "/챔피언 도전") {
       var RAID_COOLDOWN_MS = 2 * 60 * 1000; 
       if (nowMs() - u.lastRaidAt < RAID_COOLDOWN_MS) {
           var remain = Math.ceil((RAID_COOLDOWN_MS - (nowMs() - u.lastRaidAt))/1000);
-          replier.reply("🚑 [치료 중] 간호순: \"아직 안 돼요! 안정을 취하세요.\"\n(남은 시간: " + remain + "초)");
+          replier.reply("🚑 [치료 중] " + decoName + "님\n간호순: \"아직 안 돼요! 안정을 취하세요.\"\n(남은 시간: " + remain + "초)");
           return;
       }
 
-      // ★ [도배 차단] 이미 문제가 출제된 상태면 봇이 대답 안 함
+      // ★ [도배 차단] 이미 문제가 출제된 상태면 안내 후 종료
       if (u.raidCaptcha) {
-          if (new Date().getTime() < u.raidCaptcha.expire) {
-              return; // 무시
+          var left = u.raidCaptcha.expire - new Date().getTime();
+          if (left > 0) {
+              replier.reply("🔒 [공격 승인 코드 대기] " + decoName + "님\n이미 승인 코드가 발급되어 있습니다.\n(남은 시간: " + Math.ceil(left / 1000) + "초)");
+              return;
           }
       }
 
@@ -8443,7 +8445,7 @@ if (msg === "/챔피언 도전") {
       commitSave(true); 
 
       replier.reply(
-          "🔒 [공격 승인 코드]\n" + 
+          "🔒 [공격 승인 코드] " + decoName + "님\n" + 
           "❓  " + n1 + " + " + n2 + " = ?\n" +
           "━━━━━━━━━━━━━━\n" +
           "(숫자만 입력 / 제한시간 15초)"
