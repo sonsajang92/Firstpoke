@@ -3859,7 +3859,7 @@ function spawnRaidBoss(d, hpBillions) {
         lastHitter: null,
         rewardPool: 0 // ★ [신규] 코인이 모이는 공동 금고
     };
-    return "🦖 [경고] 월드 보스 '다코타 뮤츠'가 소환되었습니다!\n체력: " + fmtNum(hp) + "\n제한시간: 2시간\n명령어: /레이드";
+    return "🦖 [경고] 월드 보스 '다코타 뮤츠'가 소환되었습니다!\n체력: " + fmtNum(hp) + "\n제한시간: 40분 \n명령어: /레이드";
 }
 
 // 2. 레이드 종료 및 보상 정산 (상세 리포트: 총 체력 & 개별 딜량 표시)
