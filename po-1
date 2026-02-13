@@ -8405,18 +8405,24 @@ if (msg === "/챔피언 도전") {
       var min = Math.floor(remain / 60000);
       var hpPct = Math.floor((b.curHp / b.maxHp) * 1000) / 10; 
       
-      var barLen = 15;
+      var barLen = 10;
       var filled = Math.floor((b.curHp / b.maxHp) * barLen);
       var bar = "";
       for(var i=0; i<barLen; i++) bar += (i < filled ? "🟥" : "⬜");
       
       var rankTxt = "";
       var list = [];
-      for (var name in b.logs) list.push({n:name, d:b.logs[name]});
+    var totalDmg = 0;
+      for (var name in b.logs) {
+          var dmg = b.logs[name] || 0;
+          totalDmg += dmg;
+          list.push({n:name, d:dmg});
+      }
       list.sort(function(a, b) { return b.d - a.d; }); 
       
-      for(var k=0; k<Math.min(3, list.length); k++) {
-          rankTxt += (k+1) + ". " + list[k].n + " (" + fmtNum(list[k].d) + ")\n";
+      for(var k=0; k<Math.min(5, list.length); k++) {
+          var pct = totalDmg > 0 ? Math.floor((list[k].d / totalDmg) * 1000) / 10 : 0;
+          rankTxt += (k+1) + ". " + list[k].n + " (" + fmtNum(list[k].d) + " / " + pct + "%)\n";
       }
       if(!rankTxt) rankTxt = "(아직 참여자가 없습니다)";
 
@@ -8425,8 +8431,9 @@ if (msg === "/챔피언 도전") {
           "━━━━━━━━━━━━━━\n" +
           "❤️ 체력: " + fmtNum(b.curHp) + " / " + fmtNum(b.maxHp) + " (" + hpPct + "%)\n" +
           "[" + bar + "]\n\n" +
-          "⏳ 남은 시간: " + min + "분\n\n" +
-          "🏆 [딜 미터기 TOP 3]\n" + rankTxt + "\n" +
+          "⏳ 남은 시간: " + min + "분\n" +
+          "💰 현재 금고: " + fmtNum(b.rewardPool || 0) + " 코인\n\n" +
+          "🏆 [딜 미터기 TOP 5]\n" + rankTxt + "\n" +
           "👉 참여: '/레이드' 입력 (문제 풀고 공격!)"
       );
       return;
