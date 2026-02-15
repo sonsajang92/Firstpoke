@@ -2396,31 +2396,26 @@ function findPokemonDBByName(name) {
   }
   return null;
 }
-// [수정됨] 전투력 계산 (레벨 + 강화 + 등급 통합)
 function calcBattlePower(p) {
   var db = findPokemonDB(p.pid);
-  if (!db) 
-    return 0;
-  var base = db.basePower || 1;
-  var enh = p.enh || 0;
-  var lv = p.lv || 1;  // 레벨이 없으면 1로 취급
-  // 개체값 보너스
+  if (!db) return 0;
+  
+  var base = db.basePower || 50;
   var ivBonus = (p.ivStr || 0) + (p.ivSpd || 0);
-  // ★ [핵심 공식 변경]
-  // 기존: base * (1 + enh * 0.15)
-  // 변경: (base + 레벨보정) * (1 + 강화보정)
-  // 1. 레벨 1당 전투력 2% 증가 효과 (기본 체급 상승)
-  // 레벨 100이 되면 기본 스펙의 3배가 됨
-  var levelMul = 1 + (lv * 0.02);
-  // 2. 강화 1강당 전투력 10% 증가 (장비빨)
-  var enhMul = 1 + (enh * 0.10);
+
+  // [밸런스 설계]
+  // 1. 레벨: 포켓몬의 '기본 체급' (Lv.100이면 3배 강해짐)
+  var levelMul = 1 + (p.lv * 0.02); 
+  
+  // 2. 강화: 포켓몬의 '추가 무력' (1강당 10%씩 복리로 강해짐)
+  var enhMul = 1 + (p.enh * 0.10); 
+  
   var power = Math.floor((base + ivBonus) * levelMul * enhMul);
-  // 이로치 특전 (1.2배)
-  if (p.shiny) {
-    power = Math.floor(power * 1.2);
-  }
+  if (p.shiny) power = Math.floor(power * 1.2); // 이로치 보너스
+  
   return power;
 }
+
 //전투력 기준 정렬
 function sortPokemonsByPower(list) {
   return list.slice().sort(function(a, b) {
@@ -2552,90 +2547,58 @@ function buildTitleRanking(d, limit, myName) {
   totalTitles: TOTAL_TITLES, 
   top: list.slice(0, Math.min(limit, list.length))};
 }
-// [수정됨] 유저 데이터 초기화 (엔트리/친밀도 추가)
+
 function normalizeUserData(u) {
   if (!u) return;
   
-  // 기본 자원 초기화
-  if (typeof u.trainerLv !== "number") u.trainerLv = 1;
-  if (typeof u.trainerExp !== "number") u.trainerExp = 0;
-  if (typeof u.gold !== "number") u.gold = 0;
-  if (typeof u.dakotaCoin !== "number") u.dakotaCoin = 0;
+  // 1. 기본 재화/레벨 초기화
+  u.trainerLv = u.trainerLv || 1;
+  u.trainerExp = u.trainerExp || 0;
+  u.gold = u.gold || 0;
+  u.dakotaCoin = u.dakotaCoin || 0;
   
-  // 볼 및 아이템
-  if (typeof u.ball !== "number") u.ball = 0;
-  if (typeof u.superBall !== "number") u.superBall = 0;
-  if (typeof u.ultraBall !== "number") u.ultraBall = 0;
-  if (typeof u.godBall !== "number") u.godBall = 0;
-  
-  if (typeof u.dopaTicket !== "number") u.dopaTicket = 0; 
-  if (typeof u.cookie !== "number") u.cookie = 0;    
-  if (typeof u.ticket !== "number") u.ticket = 0;    
-  if (typeof u.reroll !== "number") u.reroll = 0;    
+  u.ball = u.ball || 0; u.superBall = u.superBall || 0;
+  u.ultraBall = u.ultraBall || 0; u.godBall = u.godBall || 0;
+  u.dopaTicket = u.dopaTicket || 0; u.cookie = u.cookie || 0;
+  u.ticket = u.ticket || 0; u.reroll = u.reroll || 0;
 
-  // 위치 및 레이드
-  if (typeof u.world !== "string") u.world = "파야레바";
-  if (typeof u.lastRaidAt !== "number") u.lastRaidAt = 0; 
+  // 2. 위치 및 상태 보호
+  var validWorlds = ["파야레바", "이슌"];
+  if (!u.world || validWorlds.indexOf(u.world) === -1) u.world = "파야레바";
+  u.lastRaidAt = u.lastRaidAt || 0;
 
-  // 가방 및 칭호
-  if (!u.items || typeof u.items !== "object") u.items = {};
+  if (!u.items) u.items = {};
+  if (!u.dex) u.dex = {};
   if (!Array.isArray(u.titles)) u.titles = ["뉴비"];
-  if (typeof u.activeTitle !== "string") u.activeTitle = "뉴비";
-
-  // 통계
-  if (!u.stats) u.stats = {};
-  
-  // 포켓몬 목록
+  u.activeTitle = u.activeTitle || "뉴비";
+  if (!u.stats) u.stats = { battleWin: 0, battleLose: 0, battleDraw: 0, battleStreak: 0 };
   if (!Array.isArray(u.pokemons)) u.pokemons = [];
-  
-  // ★ [신규] 엔트리(Party) 시스템: UID 리스트 (최대 6개)
+
   if (!Array.isArray(u.party)) {
-      u.party = [];
-      // 기존 유저 마이그레이션: 전투력 순으로 상위 6마리를 자동으로 파티에 넣음
-      if (u.pokemons.length > 0) {
-          var sorted = u.pokemons.slice().sort(function(a, b) { return (b.enh||0) - (a.enh||0); });
-          for(var k=0; k<Math.min(6, sorted.length); k++) {
-              u.party.push(sorted[k].uid);
-          }
-      }
+    u.party = [];
+    if (u.pokemons.length > 0) {
+      var sorted = u.pokemons.slice().sort(function(a, b) { return (b.enh||0) - (a.enh||0); });
+      for(var k=0; k<Math.min(6, sorted.length); k++) { u.party.push(sorted[k].uid); }
+    }
   }
 
-  // 포켓몬 개별 데이터 보정
-  var fixed = [];
+  // 3. [핵심] 포켓몬 데이터 보정 (In-place)
   for (var i = 0; i < u.pokemons.length; i++) {
     var p = u.pokemons[i];
-    if (!p || typeof p !== "object") continue;
+    if (!p) continue;
     
-    var pid = parseInt(p.pid, 10);
-    var uid = parseInt(p.uid, 10);
-    var enh = parseInt(p.enh, 10);
-    if (!pid || !uid) continue;
-    
-    if (typeof p.lv !== "number") { p.lv = (isNaN(enh) ? 0 : enh) + 1; p.exp = 0; }
-    if (p.lv < 1) p.lv = 1;
-
-    // ★ [신규] 친밀도 (0 ~ 255)
-    if (typeof p.friendship !== "number") p.friendship = 0;
-
-    var cleanObj = {
-      uid: uid,
-      pid: pid,
-      lv: p.lv,
-      exp: p.exp,
-      enh: isNaN(enh) ? 0 : enh,
-      grade: p.grade || "D",
-      ivStr: p.ivStr || 0,
-      ivHp: p.ivHp || 0,
-      ivSpd: p.ivSpd || 0,
-      shiny: !!p.shiny,
-      equip: p.equip,
-      friendship: p.friendship // 추가됨
-    };
-    fixed.push(cleanObj);
+    // 강화와 레벨은 독립입니다.
+    if (typeof p.lv !== "number" || isNaN(p.lv)) p.lv = 1; 
+    if (typeof p.exp !== "number" || isNaN(p.exp)) p.exp = 0;
+    if (typeof p.enh !== "number" || isNaN(p.enh)) p.enh = 0;
+    p.friendship = p.friendship || 0;
+    p.grade = p.grade || "D";
+    p.ivStr = p.ivStr || 0; p.ivHp = p.ivHp || 0; p.ivSpd = p.ivSpd || 0;
   }
-  u.pokemons = fixed;
-  ensureUserDex(u);
+
+  if (typeof ensureUserDex === "function") ensureUserDex(u);
 }
+
 
 // 1. 도감 카운트 헬퍼 (칭호 조건 체크 전용)
 function getDexCount(u) {
@@ -4174,63 +4137,58 @@ function isInTaechoVillage(u) {
 // PRE_MAP은 아래에서 생성
 var PRE_MAP = null;
 // =================================================================
-// 🛑 [스폰 필터] 야생에서 나오면 안 되는 진화체 목록 (출현 금지)
+// 🛑 [스폰 필터] 야생에서 나오면 안 되는 목록 (출현 금지)
 // =================================================================
-// 족보(Map)에는 없지만 진화체인 녀석들 (분기 진화 등)
-var NO_SPAWN_LIST = [182, 186, 199, 135, 136, 196, 197, 208, 212, 230, 233, 242, 169];
-// 야생 출현 가능 여부 판독기
+// 기존 진화체 번호 + 2세대 아기 포켓몬 번호 추가
+// 172(피츄), 173(삐), 174(푸푸린), 175(토게피), 236(배루키), 238(뽀뽀라), 239(에레키드), 240(마그비), 218(마그마그)
+var NO_SPAWN_LIST = [
+  182, 186, 199, 135, 136, 196, 197, 208, 212, 230, 233, 242, 169, // 기존 진화체
+  172, 173, 174, 175, 236, 238, 239, 240, 218 // 아기 포켓몬 & 마그마그 추가
+];
+
+// 이 함수가 위 리스트를 보고 알아서 걸러줍니다.
 function isBaseStagePokemonId(pid) {
-  // 1. 강제 금지 리스트에 있으면 탈락 (야생 X)
-  if (NO_SPAWN_LIST.indexOf(pid) !== -1) 
-    return false;
-  if (!PRE_MAP) 
-    return true;
+  if (NO_SPAWN_LIST.indexOf(pid) !== -1) return false;
+  if (!PRE_MAP) return true;
   return !PRE_MAP[pid];
 }
-// [수정됨] 지역별 포켓몬 스폰 함수 (dexDb 오류 수정 완료)
+
 function spawnPokemonForRegion(regionKey, worldName) {
-  var srcDb = getSpawnDbByWorld(worldName);  // 현재 월드 DB 가져오기
+  var srcDb = getSpawnDbByWorld(worldName); 
   var allowedTypes = regionTypes(regionKey);
   var pool = [];
-  // 1. 해당 지역 타입에 맞는 포켓몬 필터링
+
   for (var i = 0; i < srcDb.length; i++) {
     var p = srcDb[i];
-    if (!p) 
-      continue;
-    if (!isBaseStagePokemonId(p.id)) 
-      continue;
+    if (!p || !isBaseStagePokemonId(p.id)) continue;
+
+    // [핵심] 파야레바(관동) 마을이면 151번 초과 포켓몬은 무조건 제외
+    if (worldName === "파야레바" && p.id > 151) continue;
+
     var ok = false;
-    if (allowedTypes.indexOf(p.type1) !== -1) 
-      ok = true;
-    else if (p.type2 && allowedTypes.indexOf(p.type2) !== -1) 
-      ok = true;
-    if (ok) 
-      pool.push(p);
+    if (allowedTypes.indexOf(p.type1) !== -1) ok = true;
+    else if (p.type2 && allowedTypes.indexOf(p.type2) !== -1) ok = true;
+    
+    if (ok) pool.push(p);
   }
-  // 2. [비상 대책] 만약 조건에 맞는 포켓몬이 하나도 없다면?
+
+  // 비상 대책 (조건 맞는 게 없을 때)
   if (pool.length === 0) {
-    var fb = [];
-    // 🚨 오류 수정: dexDb -> srcDb 로 변경
-    for (var j = 0; j < srcDb.length; j++) {
-      var pp = srcDb[j];
-      if (!pp) 
-        continue;
-      if (isBaseStagePokemonId(pp.id)) 
-        fb.push(pp);
-    }
+    var fb = srcDb.filter(function(x){ 
+        return worldName === "파야레바" ? (x && x.id <= 151) : true; 
+    });
     return randomPick(fb);
   }
+
+  // --- 기존 가중치 로직 유지 ---
   var filtered = [];
   for (var k = 0; k < pool.length; k++) {
     var c = pool[k];
     var w = raritySpawnWeight(c.rarity || 2);
-    if (Math.random() < w) {
-      filtered.push(c);
-    }
+    if (Math.random() < w) filtered.push(c);
   }
-  // 운 나빠서 다 탈락했으면 전체 풀 사용
-  if (filtered.length === 0) 
-    filtered = pool;
+  if (filtered.length === 0) filtered = pool;
+
   var sum = 0;
   var weights = [];
   for (var m = 0; m < filtered.length; m++) {
@@ -4242,50 +4200,45 @@ function spawnPokemonForRegion(regionKey, worldName) {
   var r = Math.random() * sum;
   for (var n = 0; n < filtered.length; n++) {
     r -= weights[n];
-    if (r <= 0) 
-      return filtered[n];
+    if (r <= 0) return filtered[n];
   }
   return filtered[filtered.length - 1];
 }
-// -------------------- [데이터 동기화 완전판] 야생 스폰 유틸리티 --------------------
-function getWild(d, room) {
+
+// -------------------- [개인별 세션 적용] 야생 스폰 유틸리티 --------------------
+function getWild(d, user) {
   if (!d.lastSpawnByRoom) d.lastSpawnByRoom = {};
-  var rKey = room.toString().trim(); // 방 이름을 무조건 문자열+공백제거로 고정
+  var rKey = user.toString().trim();
   var w = d.lastSpawnByRoom[rKey];
-  
-  if (!w) return null;
-  
-  // 시간 만료 체크
-  if (new Date().getTime() > (w.expiresAt || 0)) {
-    d.lastSpawnByRoom[rKey] = { expired: true, pid: w.pid }; 
-    return null;
-  }
+  if (!w || new Date().getTime() > (w.expiresAt || 0)) return null;
   return w;
 }
 
-function setWild(d, room, pid, isShiny) {
+function setWild(d, user, pid, isShiny) {
   if (!d.lastSpawnByRoom) d.lastSpawnByRoom = {};
-  var rKey = room.toString().trim();
-  
-  // ★ 핵심: 해당 방의 이전 데이터를 완전히 덮어쓰기 하여 불일치 방지
+  var rKey = user.toString().trim();
   d.lastSpawnByRoom[rKey] = {
-    pid: pid,
-    at: new Date().getTime(),
+    pid: pid, at: new Date().getTime(),
     expiresAt: new Date().getTime() + SPAWN_EXPIRE_MS,
-    attempts: 0,
-    maxAttempts: getMaxCatchAttempts(pid),
-    isShiny: !!isShiny
+    attempts: 0, maxAttempts: getMaxCatchAttempts(pid), isShiny: !!isShiny
   };
-  saveData(d); // 생성 즉시 파일에 물리 저장 (동기화 핵심)
+  saveData(d);
 }
 
-function clearWild(d, room) {
-  var rKey = room.toString().trim();
-  if (d.lastSpawnByRoom && d.lastSpawnByRoom[rKey]) {
-    delete d.lastSpawnByRoom[rKey];
-    saveData(d); // 삭제 즉시 파일 저장
-  }
+function clearWild(d, user) {
+  var rKey = user.toString().trim();
+  if (d.lastSpawnByRoom) { delete d.lastSpawnByRoom[rKey]; saveData(d); }
 }
+
+function takeExpiredWild(d, user) {
+  var rKey = user.toString().trim();
+  var w = d.lastSpawnByRoom[rKey];
+  if (w && new Date().getTime() > (w.expiresAt || 0)) {
+    delete d.lastSpawnByRoom[rKey]; saveData(d); return w;
+  }
+  return null;
+}
+
 
 // -------------------- 볼/포획 확률 --------------------
 function ballCatchRate(ballType) {
@@ -5296,42 +5249,37 @@ function getPokemonNextExp(lv) {
     base = 250;
   return Math.floor(Math.pow(lv, 3) / 4) + base;
 }
-// [수정됨] 경험치 획득 및 레벨업 처리 (포켓몬 만렙 99 적용)
+// [개편] 레벨업/경험치 획득 시 호출되는 함수
 function gainPokemonExp(u, p, expGain) {
-  if (typeof p.lv !== "number") 
-    p.lv = 1;
-  if (typeof p.exp !== "number") 
-    p.exp = 0;
-  if (p.lv >= MAX_POKE_LV) 
-    return "";
+  if (p.lv >= MAX_POKE_LV) return "";
+  
   p.exp += expGain;
   var totalMsg = "";
   var levelUpCount = 0;
+
   while (true) {
     var need = getPokemonNextExp(p.lv);
     if (p.exp >= need) {
       p.exp -= need;
       p.lv++;
       levelUpCount++;
-      // ★ 만렙 도달 시 경험치 0 처리 및 종료
-      if (p.lv >= MAX_POKE_LV) {
-        p.exp = 0;
-        break;
-      }
-    } else {
-      break;
-    }
+      if (p.lv >= MAX_POKE_LV) { p.exp = 0; break; }
+    } else { break; }
   }
+
   if (levelUpCount > 0) {
-    totalMsg += "🆙 " + getDisplayName(p) + " (Lv." + (p.lv - levelUpCount) + " ➔ Lv." + p.lv + ") 상승!\n";
-    var evoResult = checkLevelEvolution(u, p);
+    totalMsg += "🆙 " + getDisplayName(p) + " (Lv." + (p.lv - levelUpCount) + " ➔ Lv." + p.lv + ") 상승!";
+    
+    // ★ 여기서만 진화 체크를 합니다! (강화 시에는 안 함)
+    var evoResult = checkLevelEvolution(u, p); 
     if (evoResult) {
-      totalMsg += "\n✨ 오?! 포켓몬의 상태가...!\n🧬 " + evoResult + " 진화 성공!!!\n";
+      totalMsg += "\n✨ 오?! 포켓몬의 상태가...! " + evoResult + " 진화 성공!";
       dexCaught(u, p.pid, p.grade, p.shiny);
     }
   }
   return totalMsg;
 }
+
 // 3. [자동 진화] 레벨업 시 진화 체크 함수 (장비/레벨 조건)
 function checkLevelEvolution(u, p) {
   // 1. 이 포켓몬의 진화 정보 확인 (Phase 1에서 만든 DB 사용)
@@ -6730,6 +6678,40 @@ function response(room, msg, sender, isGroupChat, replier, imageDB) {
         replier.reply("👑 챔피언 데이터가 초기화되었습니다.\n현재 챔피언: 레드(NPC)");
         return;
       }
+      
+      if (sub === "선발대초기화") {
+        var fixedCount = 0;
+        var userCount = 0;
+        
+        for (var name in d.users) {
+          var uTarget = d.users[name];
+          userCount++;
+          
+          // [핵심 수정] 유저 데이터에 저장된 선발대 명단(배열) 자체를 비웁니다.
+          uTarget.champTeam = []; 
+          uTarget.gymTeam = [];
+          
+          if (uTarget.pokemons) {
+            for (var i = 0; i < uTarget.pokemons.length; i++) {
+              var p = uTarget.pokemons[i];
+              // 포켓몬에게 직접 붙어있는 모든 잠금 플래그를 삭제합니다.
+              if (p.isChampionMember || p.isLeague || p.isExploring || p.busy) {
+                delete p.isChampionMember;
+                delete p.isLeague;
+                delete p.isExploring;
+                delete p.busy;
+                fixedCount++;
+              }
+            }
+          }
+        }
+        
+        commitSave(true); // 변경된 명단과 플래그를 파일에 즉시 저장
+        replier.reply("✅ [데이터 클린업 완료]\n- 대상 유저: " + userCount + "명\n- 해제된 포켓몬: " + fixedCount + "마리\n- 모든 선발대 명단(champTeam/gymTeam)을 초기화했습니다.\n이제 망나뇽을 다시 사용할 수 있습니다!");
+        return;
+      }
+
+      
       if (sub === "계정이동") {
         var oldName = parts[2];
         var newName = parts[3];
@@ -7157,290 +7139,190 @@ function response(room, msg, sender, isGroupChat, replier, imageDB) {
     if (msg.indexOf("/사용") === 0) {
       var parts = msg.split(" ").filter(Boolean);
       var itemCmd = parts[1];
+      
+      // 1. [장비상자] 개봉 로직
       if (itemCmd === "상자" || itemCmd === "보물상자" || itemCmd === "장비상자") {
         var qty = parseInt(parts[2], 10);
-        if (isNaN(qty)) 
-          qty = 1;
+        if (isNaN(qty)) qty = 1;
         if (!u.items || !u.items["장비상자"] || u.items["장비상자"] < qty) {
           replier.reply("🎁 '장비상자'가 부족합니다.\n보유: " + (u.items ? (u.items["장비상자"] || 0) : 0) + "개");
           return;
         }
+
         u.items["장비상자"] -= qty;
-        if (u.items["장비상자"] <= 0) 
-          delete u.items["장비상자"];
+        if (u.items["장비상자"] <= 0) delete u.items["장비상자"];
+
         var resultLog = "";
         var getItems = {};
         var fragmentCount = 0;
-        // 4티어 체제 분류
+        
         var t1 = [], t2 = [], t3 = [], t4 = [];
         for (var k in EQUIP_DB) {
           var item = EQUIP_DB[k];
           var tier = item.tier || 1;
-          if (tier === 4) 
-            t4.push(k);          // 전설
-          else if (tier === 3) 
-            t3.push(k);          // 상급
-          else if (tier === 2) 
-            t2.push(k);          // 일반 속성
-          else 
-            t1.push(k);          // 일반
+          if (tier === 4) t4.push(k);
+          else if (tier === 3) t3.push(k);
+          else if (tier === 2) t2.push(k);
+          else t1.push(k);
         }
-        // 안전장치
-        if (t2.length === 0) 
-          t2 = t1.slice();
-        if (t3.length === 0) 
-          t3 = t2.slice();
-        if (t4.length === 0) 
-          t4 = t3.slice();
-        var P_T4 = BOX_PROB_TIER_4;
-        var P_T3 = BOX_PROB_TIER_3;
-        var P_T2 = BOX_PROB_TIER_2;
-        var P_T1 = BOX_PROB_TIER_1;
-        // 뽑기 진행
+
         for (var i = 0; i < qty; i++) {
           var roll = Math.random();
           var picked = "";
           var grade = "";
-          // ① 4티어 (전설)
-          if (roll < P_T4) {
-            picked = t4[Math.floor(Math.random() * t4.length)];
-            grade = "👑[전설]";
-          } else if (roll < (P_T4 + P_T3)) {
-            picked = t3[Math.floor(Math.random() * t3.length)];
-            grade = "🌟[상급]";
-          } else if (roll < (P_T4 + P_T3 + P_T2)) {
-            picked = t2[Math.floor(Math.random() * t2.length)];
-            grade = "🔹";
-          } else if (roll < (P_T4 + P_T3 + P_T2 + P_T1)) {
-            picked = t1[Math.floor(Math.random() * t1.length)];
-            grade = "⚪";
-          } else {
-            fragmentCount++;
-            continue;
-          }
-          // 아이템 적립
+          if (roll < BOX_PROB_TIER_4) { picked = t4[Math.floor(Math.random() * t4.length)]; grade = "👑[전설]"; }
+          else if (roll < (BOX_PROB_TIER_4 + BOX_PROB_TIER_3)) { picked = t3[Math.floor(Math.random() * t3.length)]; grade = "🌟[상급]"; }
+          else if (roll < (BOX_PROB_TIER_4 + BOX_PROB_TIER_3 + BOX_PROB_TIER_2)) { picked = t2[Math.floor(Math.random() * t2.length)]; grade = "🔹"; }
+          else if (roll < (BOX_PROB_TIER_4 + BOX_PROB_TIER_3 + BOX_PROB_TIER_2 + BOX_PROB_TIER_1)) { picked = t1[Math.floor(Math.random() * t1.length)]; grade = "⚪"; }
+          else { fragmentCount++; continue; }
+          
           getItems[picked] = (getItems[picked] || 0) + 1;
           resultLog += grade + " " + picked + "\n";
         }
-        // --- 결과 정산 ---
-        for (var key in getItems) {
-          u.items[key] = (u.items[key] || 0) + getItems[key];
-        }
+
+        for (var key in getItems) { u.items[key] = (u.items[key] || 0) + getItems[key]; }
+
         var autoBox = 0;
         if (fragmentCount > 0) {
           u.items["상자파편"] = (u.items["상자파편"] || 0) + fragmentCount;
           resultLog += "🧩 상자파편 +" + fragmentCount + "개\n";
-          // 파편 10개 -> 상자 1개 자동 교환
           if (u.items["상자파편"] >= 10) {
             autoBox = Math.floor(u.items["상자파편"] / 10);
             u.items["상자파편"] %= 10;
             u.items["장비상자"] = (u.items["장비상자"] || 0) + autoBox;
           }
         }
+
         commitSave(true);
         var summary = "🎁 상자 " + qty + "개를 개봉했습니다!\n━━━━━━━━━━━━━━\n" + (resultLog || "🧩 파편만 잔뜩 나왔습니다...\n");
-        if (autoBox > 0) {
-          summary += "\n♻️ 파편 10개를 모아 [장비상자 +" + autoBox + "]개를 합성했습니다!";
-        }
+        if (autoBox > 0) summary += "\n♻️ 파편 10개를 모아 [장비상자 +" + autoBox + "]개를 합성했습니다!";
         replier.reply(summary);
         return;
       }
+
+      // 2. 포켓몬 대상 아이템 (UID 필요)
       var targetUid = parseInt(parts[2], 10);
-      // 대상이 필요한 아이템인데 UID가 없으면 안내
-      if (["두쫀쿠", "쿠키", "이동", "티켓", "티어리셋", "티어", "리셋", "딸기", "딸쫀쿠", "열매", "황금열매", "페인트", "황금페인트"].indexOf(itemCmd) !== -1) {
-        if (!targetUid && itemCmd.indexOf("이동") === -1 && itemCmd.indexOf("티켓") === -1) {
-          replier.reply("사용법: /사용 [아이템명] [UID]\n예: /사용 딸기 15");
-          return;
-        }
+      var needsUid = ["딸기", "딸쫀쿠", "딸기쿠키", "열매", "황금열매", "라즈열매", "페인트", "황금페인트", "이로치", "두쫀쿠", "쿠키", "티어리셋", "리셋"].indexOf(itemCmd) !== -1;
+      
+      if (needsUid && isNaN(targetUid)) {
+        replier.reply("사용법: /사용 [아이템명] [포켓몬UID]\n예: /사용 딸기 15");
+        return;
       }
+
+      var p = needsUid ? findUserPokemonByUid(u, targetUid) : null;
+      if (needsUid && !p) { replier.reply("해당 포켓몬을 찾을 수 없습니다."); return; }
+      if (p && isPokemonBusy(u, p.uid)) { replier.reply("🚫 탐험 중인 포켓몬은 아이템을 사용할 수 없습니다."); return; }
+
+      // --- [아이템별 상세 로직] ---
+
+      // A. 딸기쿠키
       if (itemCmd === "딸기" || itemCmd === "딸쫀쿠" || itemCmd === "딸기쿠키") {
-        if (!u.items || !u.items["딸기쿠키"] || u.items["딸기쿠키"] <= 0) {
-          replier.reply("🍓 '딸쫀쿠'가 없습니다.");
-          return;
-        }
-        var p = findUserPokemonByUid(u, targetUid);
-        if (!p) {
-          replier.reply("해당 포켓몬이 없습니다.");
-          return;
-        }
-        if (isPokemonBusy(u, p.uid)) {
-          replier.reply("탐험 중인 포켓몬입니다.");
-          return;
-        }
-        if (p.enh >= ENHANCE_MAX) {
-          replier.reply("이미 최대 강화입니다.");
-          return;
-        }
+        if (!u.items || !u.items["딸기쿠키"] || u.items["딸기쿠키"] <= 0) { replier.reply("🍓 '딸쫀쿠'가 없습니다."); return; }
+        if (p.enh >= ENHANCE_MAX) { replier.reply("이미 최대 강화 상태입니다."); return; }
         u.items["딸기쿠키"]--;
         var before = p.enh || 0;
-        var after = Math.min(ENHANCE_MAX, before + 3);
-        p.enh = after;
+        p.enh = Math.min(ENHANCE_MAX, before + 3);
         commitSave(true);
-        var db = findPokemonDB(p.pid);
-        replier.reply("🍓 냠냠! 딸기맛 쿠키를 먹었습니다.\n\n🔥 초고속 성장! " + (db ? db.name : "") + "\n" + before + "강 ➔ " + after + "강 (+3)");
-        return;
+        replier.reply("🍓 냠냠! 딸기맛 쿠키를 먹었습니다.\n\n🔥 [강화 성공] " + getDisplayName(p) + "\n" + before + "강 ➔ " + p.enh + "강 (+3)\n(레벨은 배틀/탐험 경험치로 올릴 수 있습니다!)");
       }
-      if (itemCmd === "열매" || itemCmd === "황금열매" || itemCmd === "라즈열매") {
-        if (!u.items || !u.items["황금열매"] || u.items["황금열매"] <= 0) {
-          replier.reply("🥜 '황금열매'가 없습니다.");
-          return;
-        }
-        var p = findUserPokemonByUid(u, targetUid);
-        if (!p) {
-          replier.reply("해당 포켓몬이 없습니다.");
-          return;
-        }
-        if (isPokemonBusy(u, p.uid)) {
-          replier.reply("탐험 중인 포켓몬입니다.");
-          return;
-        }
-        if (p.grade === "S" && p.ivStr === 15 && p.ivHp >= 150 && p.ivSpd === 15) {
-          replier.reply("이미 완벽한 포켓몬입니다.");
-          return;
-        }
+
+      // B. 황금열매
+      else if (itemCmd === "열매" || itemCmd === "황금열매" || itemCmd === "라즈열매") {
+        if (!u.items || !u.items["황금열매"] || u.items["황금열매"] <= 0) { replier.reply("🥜 '황금열매'가 없습니다."); return; }
         u.items["황금열매"]--;
-        p.grade = "S";
-        p.ivStr = 15;
-        p.ivHp = 150;
-        p.ivSpd = 15;
+        p.grade = "S"; p.ivStr = 15; p.ivHp = 150; p.ivSpd = 15;
         dexCaught(u, p.pid, "S");
         commitSave(true);
-        replier.reply("🥜 전설의 열매를 먹였습니다!\n잠재력이 폭발합니다!\n\n👑 등급: [S] 확정\n💪 힘: 15 (MAX)\n❤️ 체력: 15 (MAX)\n⚡ 공속: 15 (MAX)");
-        return;
+        replier.reply("🥜 전설의 열매를 먹였습니다! 잠재력이 폭발합니다!\n\n👑 등급: [S] 확정\n💪 힘: 15 / ❤️ 체력: 15 / ⚡ 공속: 15 (MAX)");
       }
-      if (itemCmd === "페인트" || itemCmd === "황금페인트" || itemCmd === "이로치") {
-        if (!u.items || !u.items["황금페인트"] || u.items["황금페인트"] <= 0) {
-          replier.reply("🎨 '황금페인트'가 없습니다.");
-          return;
-        }
-        var p = findUserPokemonByUid(u, targetUid);
-        if (!p) {
-          replier.reply("해당 포켓몬이 없습니다.");
-          return;
-        }
-        if (isPokemonBusy(u, p.uid)) {
-          replier.reply("탐험 중인 포켓몬입니다.");
-          return;
-        }
-        if (p.shiny) {
-          replier.reply("이미 이로치 포켓몬입니다.");
-          return;
-        }
+
+      // C. 황금페인트
+      else if (itemCmd === "페인트" || itemCmd === "황금페인트" || itemCmd === "이로치") {
+        if (!u.items || !u.items["황금페인트"] || u.items["황금페인트"] <= 0) { replier.reply("🎨 '황금페인트'가 없습니다."); return; }
+        if (p.shiny) { replier.reply("이미 이로치 포켓몬입니다."); return; }
         u.items["황금페인트"]--;
         p.shiny = true;
         ensureUserDex(u);
-        if (u.dex[String(p.pid)]) 
-          u.dex[String(p.pid)].hasShiny = true;
+        if (u.dex[String(p.pid)]) u.dex[String(p.pid)].hasShiny = true;
         commitSave(true);
-        checkAndNotifyTitles(u, replier);
         replier.reply("🎨 쓱싹쓱싹... 황금색으로 칠했습니다!\n\n✨ " + getDisplayName(p) + "(으)로 변신 성공!");
-        return;
       }
-      if (itemCmd === "두쫀쿠" || itemCmd === "쿠키") {
-        var uid = parseInt(parts[2], 10);
-        if (!u.cookie || u.cookie <= 0) {
-          replier.reply("🍪 두쫀쿠가 없습니다.");
-          return;
-        }
-        var p = findUserPokemonByUid(u, uid);
-        if (!p) {
-          replier.reply("해당 포켓몬이 없습니다.");
-          return;
-        }
-        if (isPokemonBusy(u, p.uid)) {
-          replier.reply("탐험 중입니다.");
-          return;
-        }
-        if (p.enh >= ENHANCE_MAX) {
-          replier.reply("이미 최대 강화입니다.");
-          return;
-        }
+
+      // D. 두쫀쿠
+      else if (itemCmd === "두쫀쿠" || itemCmd === "쿠키") {
+        if (!u.cookie || u.cookie <= 0) { replier.reply("🍪 두쫀쿠가 없습니다."); return; }
+        if (p.enh >= ENHANCE_MAX) { replier.reply("이미 최대 강화입니다."); return; }
         u.cookie--;
         p.enh++;
-        u.stats.totalCookieUsed = (u.stats.totalCookieUsed || 0) + 1;
+        if (!u.stats.totalCookieUsed) u.stats.totalCookieUsed = 0;
+        u.stats.totalCookieUsed++;
         commitSave(true);
-        checkAndNotifyTitles(u, replier);
-        // ★ [수정됨] 사용자 + 포켓몬 이름 표시
-        var pName = getDisplayName(p);
-        replier.reply("🍪 " + decoName + "님의 #" + p.uid + " " + pName + "(이)가 두쫀쿠를 먹었습니다!\n🔥 " + (p.enh - 1) + "강 ➔ " + p.enh + "강 성공!");
-        return;
+        replier.reply("🍪 " + decoName + "님의 " + getDisplayName(p) + " 강화 성공!\n🔥 " + (p.enh - 1) + "강 ➔ " + p.enh + "강\n(레벨은 배틀/탐험 경험치로 올릴 수 있습니다!)");
       }
-      if (itemCmd === "이동" || itemCmd === "티켓") {
+
+      // E. 이동티켓
+      else if (itemCmd === "이동" || itemCmd === "티켓") {
         var regionName = parts[2];
-        var validRegions = [];
-        for (var i = 0; i < REGIONS.length; i++) {
-          if (REGIONS[i].key !== "냥치의 방") 
-            validRegions.push(REGIONS[i].key);
-        }
+        var validRegions = REGIONS.map(function(r) { return r.key; }).filter(function(k) { return k !== "냥치의 방"; });
         if (!regionName || validRegions.indexOf(regionName) === -1) {
-          replier.reply("🚫 갈 수 없는 지역입니다.\n사용법: /사용 이동 [지역명]\n🎫 가능 지역: " + validRegions.join(", "));
-          return;
+          replier.reply("🚫 갈 수 없는 지역입니다.\n🎫 가능 지역: " + validRegions.join(", ")); return;
         }
-        if (!u.ticket || u.ticket <= 0) {
-          replier.reply("🎫 이동티켓이 없습니다.");
-          return;
-        }
+        if (!u.ticket || u.ticket <= 0) { replier.reply("🎫 이동티켓이 없습니다."); return; }
         u.ticket--;
         u.nextFieldRegion = regionName;
         commitSave(true);
-        replier.reply("🎫 티켓 사용 완료!\n🚀 다음 '/필드' 탐색 시 [" + regionName + "] 지역으로 이동합니다.");
-        return;
+        replier.reply("🎫 티켓 사용 완료! 다음 '/필드' 탐색 시 [" + regionName + "] 지역으로 이동합니다.");
       }
-      if (itemCmd === "티어리셋" || itemCmd === "티어" || itemCmd === "리셋") {
-        var uid = parseInt(parts[2], 10);
-        if (!u.reroll || u.reroll <= 0) {
-          replier.reply("🔄 티어리셋권이 없습니다.");
-          return;
-        }
-        var p = findUserPokemonByUid(u, uid);
-        if (!p) {
-          replier.reply("해당 포켓몬이 없습니다.");
-          return;
-        }
-        if (isPokemonBusy(u, p.uid)) {
-          replier.reply("탐험 중입니다.");
-          return;
-        }
+
+      // F. [수정됨] 티어리셋권 (수치 변화 상세 표기)
+      else if (itemCmd === "티어리셋" || itemCmd === "티어" || itemCmd === "리셋") {
+        if (!u.reroll || u.reroll <= 0) { replier.reply("🔄 티어리셋권이 없습니다."); return; }
         u.reroll--;
+
+        // 비포 데이터 저장
         var oldGrade = p.grade || "D";
-        // ★ [수정됨] 리셋권 전용 '혜자' 확률 적용
-        // S(10%), A(20%), B(30%), C(25%), D(15%)
-        var newGrade = "D";
-        var r = Math.random();
-        if (r < 0.10) 
-          newGrade = "S";        // 기존 5% -> 10% (2배)
-        else if (r < 0.30) 
-          newGrade = "A";        // 누적 30% (A급 20%)
-        else if (r < 0.60) 
-          newGrade = "B";        // 누적 60% (B급 30%)
-        else if (r < 0.85) 
-          newGrade = "C";        // 누적 85% (C급 25%)
-        else 
-          newGrade = "D";        // 나머지 15% (꽝 확률 감소)
-        // 새로운 등급에 맞춰 잠재력(IV)도 재설정
+        var oldStr = p.ivStr || 0;
+        var oldHp = Math.floor((p.ivHp || 0) / 10); // 15점 만점 기준 환산
+        var oldSpd = p.ivSpd || 0;
+
+        // 새 데이터 생성
+        var newGrade = generatePokemonGrade();
         var newIVs = generateIVsByGrade(newGrade);
         p.grade = newGrade;
         p.ivStr = newIVs.str;
         p.ivHp = newIVs.hp;
         p.ivSpd = newIVs.spd;
-        // 변경된 등급 도감 반영
+
         dexCaught(u, p.pid, newGrade);
         commitSave(true);
+
+        // 등급 등락 표시
+        var arrowMark = "➔";
+        if (GRADE_ORDER[newGrade] > GRADE_ORDER[oldGrade]) arrowMark = "📈(상승!)";
+        else if (GRADE_ORDER[newGrade] < GRADE_ORDER[oldGrade]) arrowMark = "📉(하락..)";
+        else arrowMark = "➖(유지)";
+
         var pShowName = getDisplayName(p);
-        // 결과 멘트 (등급 등락 표시)
-        var arrow = "➔";
-        if (GRADE_ORDER[newGrade] > GRADE_ORDER[oldGrade]) 
-          arrow = "📈(상승!)";
-        else if (GRADE_ORDER[newGrade] < GRADE_ORDER[oldGrade]) 
-          arrow = "📉(하락..)";
-        else 
-          arrow = "➖(유지)";
-        replier.reply("🔄 리셋 완료! " + pShowName + "\n" + "[" + oldGrade + "] " + arrow + " 【 " + newGrade + " 】 등급으로 변경되었습니다.\n" + "(잠재력 스탯도 등급에 맞춰 재조정되었습니다.)");
-        return;
+        var resultMsg = "🔄 리셋 완료! " + pShowName + " (UID: #" + p.uid + ")\n" +
+                        "━━━━━━━━━━━━━━\n" +
+                        "🏆 등급: [" + oldGrade + "] " + arrowMark + " 【 " + newGrade + " 】\n\n" +
+                        "[잠재력 변화 (15점 만점)]\n" +
+                        "💪 힘 : " + oldStr + " ➔ " + p.ivStr + "\n" +
+                        "❤️ 체 : " + oldHp + " ➔ " + Math.floor(p.ivHp / 10) + "\n" +
+                        "⚡ 민 : " + oldSpd + " ➔ " + p.ivSpd + "\n" +
+                        "━━━━━━━━━━━━━━\n" +
+                        "💡 잠재력이 등급에 맞춰 재조정되었습니다.";
+        replier.reply(resultMsg);
       }
-      replier.reply("📝 [아이템 사용법]\n" + "🎁 상자깡: /사용 상자 [수량]\n" + "🍓 딸쫀쿠: /사용 딸기 [UID]\n" + "🥜 황금열매: /사용 열매 [UID]\n" + "🎨 황금페인트: /사용 페인트 [UID]\n" + "🍪 두쫀쿠: /사용 두쫀쿠 [UID]\n" + "🎫 이동: /사용 이동 [지역명]\n" + "🔄 티어리셋: /사용 리셋 [UID]");
+
+      else {
+        replier.reply("📝 [아이템 사용법]\n상자, 딸기, 열매, 페인트, 두쫀쿠, 리셋, 이동");
+      }
       return;
     }
+
+
+
     if (msg.indexOf("/분해") === 0 || msg.indexOf("/갈갈") === 0) {
       var parts = msg.split(" ").filter(Boolean);
       var itemName = parts[1];
@@ -7509,80 +7391,53 @@ function response(room, msg, sender, isGroupChat, replier, imageDB) {
    // -------------------- [수정됨] /내포켓몬 (엔트리/내박스 분리) --------------------
   if (msg === "/내포켓몬") {
     if (!u.pokemons || u.pokemons.length === 0) {
-      replier.reply(sender + "님은 보유한 포켓몬이 없습니다.");
-      return;
+      replier.reply(sender + "님은 보유한 포켓몬이 없습니다."); return;
     }
     
     ensurePokemonGrades(u);
-
-    // 1. 분류 작업 (엔트리 vs 박스)
-    var partyList = [];
-    var boxList = [];
-    
-    // 전체를 전투력 순으로 정렬 먼저 함
+    var partyLines = [];
+    var boxLines = [];
     var sorted = sortPokemonsByPower(u.pokemons);
 
     for (var i = 0; i < sorted.length; i++) {
-        var p = sorted[i];
-        
-        // 포켓몬 정보 문자열 생성
-        var power = calcBattlePower(p);
-        var name = getDisplayName(p); 
-        var enh = (p.enh && p.enh > 0) ? ("+" + p.enh + "강") : ""; 
-        var lvStr = "Lv." + (p.lv || 1); 
-        var grade = p.grade || "D";
-        var gradeStr = "[" + grade + "]";
-        if (grade === "S") gradeStr += "👑"; 
-        
-        var equipStr = "";
-        if (p.equip && EQUIP_DB[p.equip]) {
-            var icon = EQUIP_DB[p.equip].icon || "🛡️";
-            equipStr = " " + icon;
-        }
-        var status = isPokemonBusy(u, p.uid) ? " (🧭)" : "";
-        
-        // 한 줄 요약: #1 Lv.50 ✨리자몽 +60강 [S]👑 🛡️ (🧭)
-        var line = "#" + p.uid + " " + lvStr + " " + name + " " + enh + " | 투력 " + fmtNum(power) + " " + gradeStr + equipStr + status;
+      var p = sorted[i];
+      var name = getDisplayName(p);
+      var power = calcBattlePower(p);
+      var gradeStr = "[" + (p.grade || "D") + "]" + (p.grade === "S" ? "👑" : "");
+      var enhStr = (p.enh > 0) ? ("+" + p.enh + "강") : "";
+      var status = isPokemonBusy(u, p.uid) ? " (🧭)" : "";
+      
+      var line = "#" + p.uid + " " + name + " (Lv." + (p.lv || 1) + ") " + enhStr + " | 투력 " + fmtNum(power) + " " + gradeStr + status;
 
-        // 엔트리에 포함된 UID인지 확인
-        if (u.party.indexOf(p.uid) !== -1) {
-            partyList.push("★ " + line); // 엔트리는 별표
-        } else {
-            boxList.push(line);
-        }
+      if (u.party.indexOf(p.uid) !== -1) partyLines.push("★ " + line);
+      else boxLines.push(line);
     }
 
-    // 2. 출력 메시지 구성
-    var summary = "🎒 " + sender + "님의 포켓몬 관리\n" + 
-                  "엔트리: " + partyList.length + " / 6\n" +
-                  "박스: " + boxList.length + "마리\n\n" + 
+    var summary = "🎒 " + decoName + "님의 포켓몬 관리\n" + 
+                  "엔트리: " + partyLines.length + " / 6\n" +
+                  "박스: " + boxLines.length + "마리\n\n" + 
                   "전체보기로 상세 목록을 확인하세요.";
                   
-    var full = "";
-    
-    // [섹션 1] 엔트리
-    full += "━━━━━━━━━━━━━━\n";
-    full += "⚔️ [엔트리 멤버] (전투 출전)\n";
-    full += "━━━━━━━━━━━━━━\n";
-    if (partyList.length > 0) full += partyList.join("\n") + "\n";
-    else full += "(비어있음)\n";
-
-    // [섹션 2] 박스
-    full += "\n━━━━━━━━━━━━━━\n";
-    full += "📦 [박스 보관함] (대기 중)\n";
-    full += "━━━━━━━━━━━━━━\n";
-    if (boxList.length > 0) {
-        // 박스는 번호를 매겨서 출력
-        for(var k=0; k<boxList.length; k++) {
-            full += (k+1) + ". " + boxList[k] + "\n";
-        }
+    var full = "━━━━━━━━━━━━━━\n" +
+               "⚔️ [엔트리 멤버]\n" +
+               "━━━━━━━━━━━━━━\n" +
+               (partyLines.length > 0 ? partyLines.join("\n") : "(비어있음)") + "\n\n" +
+               "━━━━━━━━━━━━━━\n" +
+               "📦 [박스 대기 멤버]\n" +
+               "━━━━━━━━━━━━━━\n";
+               
+    if (boxLines.length === 0) {
+      full += "(비어있음)";
     } else {
-        full += "(비어있음)\n";
+      for (var k = 0; k < boxLines.length; k++) {
+        full += (k + 1) + ". " + boxLines[k] + "\n";
+      }
     }
 
     replyFold(replier, summary, full);
     return;
   }
+
 
     if (msg.indexOf("/포켓몬") === 0) {
       var t = getTargetFromMsg(d, sender, msg, "/포켓몬");
@@ -8258,17 +8113,15 @@ var GUIDE_MAP = {
     return;
   }
 
-  // -------------------- [최종] /필드 명령어 (버그 박멸 + 친밀도 포함) --------------------
+  // -------------------- [최종] /필드 명령어 (다코타/냥치의 방 제외 및 위치 표기) --------------------
   if (msg === "/필드") {
-    // 1. 이미 포켓몬이 있는지 확인
-    var currentWild = getWild(d, room);
+    var currentWild = getWild(d, sender);
     if (currentWild) {
       var dbOld = findPokemonDB(currentWild.pid);
       replier.reply("⚠️ 이미 필드에 [" + (currentWild.isShiny?"✨":"") + (dbOld?dbOld.name:"포켓몬") + "]가 있습니다!\n먼저 포획하거나 /ㅌㅌ 하세요.");
       return;
     }
 
-    // 2. 쿨타임 체크
     var now = new Date().getTime();
     if (now - u.lastFieldAt < FIELD_COOLDOWN_MS) {
       var sec = Math.ceil((FIELD_COOLDOWN_MS - (now - u.lastFieldAt)) / 1000);
@@ -8277,53 +8130,55 @@ var GUIDE_MAP = {
     }
     u.lastFieldAt = now;
 
-    // 3. 포켓몬 추첨 및 지역 결정
+    // [핵심 수정] 냥치의 방과 다코타는 필드에서 출현하지 않도록 예외 처리
     var region = getRoomRegion(d, room);
-    if (region === "냥치의 방") region = REGIONS[0].key;
+    if (region === "냥치의 방" || region === "다코타") {
+      region = REGIONS[0].key; // 히든 지역이 당첨되면 기본 지역인 '초원'으로 변경
+    }
     
     var wildData;
     var forcedShiny = false;
+    var currentWorld = getSpawnWorldName(u); // 현재 마을(파야레바/이슌) 가져오기
 
-    // 관리자 예약 스폰 등 기존 로직 유지
     if (u.nextSpawnPid && u.nextSpawnPid > 0) {
       wildData = findPokemonDB(u.nextSpawnPid);
       forcedShiny = !!u.nextSpawnShiny;
       u.nextSpawnPid = 0; u.nextSpawnShiny = false;
     } else {
-      wildData = spawnPokemonForRegion(region, getSpawnWorldName(u));
+      wildData = spawnPokemonForRegion(region, currentWorld);
+      // 파야레바 마을일 경우 1세대 포켓몬만 나오도록 안전장치
+      if (currentWorld === "파야레바" && wildData.id > 151) {
+          var fallbackPool = POKEMON_DB.filter(function(p) { return p.id <= 151; });
+          wildData = fallbackPool[Math.floor(Math.random() * fallbackPool.length)];
+      }
       forcedShiny = (Math.random() < SHINY_PROBABILITY);
     }
 
-    // ★ [핵심 수정] 만난 포켓몬의 ID를 해당 방 정보에 '박제'하고 즉시 저장
-    setWild(d, room, wildData.id, forcedShiny);
+    setWild(d, sender, wildData.id, forcedShiny);
     dexSeen(u, wildData.id);
-    
-    // ★ 엔트리 친밀도 상승 로직 (기능 유지)
-    var bondingMsg = "";
-    if (u.party && u.party.length > 0) {
-        for(var partyUid of u.party) {
-            var member = findUserPokemonByUid(u, partyUid);
-            if (member && (member.friendship || 0) < 255) {
-                member.friendship = (member.friendship || 0) + 1;
-            }
-        }
-        if (Math.random() < 0.3) bondingMsg = "\n(❤️ 엔트리 포켓몬들과 사이가 좋아졌습니다)";
-    }
-    commitSave(true); // 필드 생성 즉시 파일 저장 강제
+    commitSave(true);
 
-    replier.reply(
-      sayDo(decoName, pick(FIELD_SEARCH_LINES)) + "\n\n" + 
-      "[마을: " + getSpawnWorldName(u) + " / 지역: " + region + "]\n\n" + 
-      (forcedShiny ? "✨✨✨ 이로치 출현! ✨✨✨\n" : "") +
-      "⚡ 야생의 [" + wildData.name + "] 와(과) 마주쳤다!\n" +
-      "🎯 포획: /몬, /슈, /하 / 🏃 도망: /ㅌㅌ" + bondingMsg
-    );
+    // --- [출력 스타일: 📍위치 정보 포함] ---
+    var output = decoName + "님이 " + pick(FIELD_SEARCH_LINES) + "\n\n" +
+                 "📍 [위치: " + currentWorld + " / " + region + "]\n" +
+                 "━━━━━━━━━━━━━━\n" +
+                 "⚡ " + decoName + "님이 " + (forcedShiny ? "✨" : "") + wildData.name + " 와(과) 마주쳤어요!\n" +
+                 pick(FIELD_ENCOUNTER_LINES) + "\n\n" +
+                 "🎒 보유 볼\n" +
+                 "- 몬스터볼: " + u.ball + "\n" +
+                 "- 슈퍼볼: " + u.superBall + "\n" +
+                 "- 하이퍼볼: " + u.ultraBall + "\n\n" +
+                 "🎯 포획: /몬(/ㅁ), /슈(/ㅅ), /하(/ㅎ)\n" +
+                 "🏃 도망: /도망(/ㅌㅌ)\n" +
+                 "⏳ 60초 안에 선택";
+
+    replier.reply(output);
     return;
   }
 
   // -------------------- [최종] /도망(/ㅌㅌ) 명령어 --------------------
   if (msg === "/도망" || msg === "/ㅌㅌ") {
-    var targetW = getWild(d, room);
+    var targetW = getWild(d, sender);
     if (!targetW) {
       replier.reply("필드에 마주친 포켓몬이 없거나 이미 사라졌습니다.");
       return;
@@ -8331,7 +8186,7 @@ var GUIDE_MAP = {
     var dbw3 = findPokemonDB(targetW.pid);
     var pName = (dbw3 && dbw3.name) ? dbw3.name : "야생 포켓몬";
 
-    clearWild(d, room); // 즉시 삭제 및 저장
+    clearWild(d, sender); // 즉시 삭제 및 저장
     if (!u.stats.totalEscapes) u.stats.totalEscapes = 0;
     u.stats.totalEscapes++;
     commitSave(true);    
@@ -8340,20 +8195,19 @@ var GUIDE_MAP = {
     return;
   }
 
-  // -------------------- [최종] handleCatch 함수 (불일치 버그 100% 차단) --------------------
+  // -------------------- [최종] handleCatch 함수 (세대 판별 로직 보강 버전) --------------------
   function handleCatch(ballType, ballName, decoName, replier) {
-    // 1. 볼 던지는 순간 파일을 강제로 새로 읽어 최신 '방 정보'를 가져옴
-    var d = loadData(); 
-    var wild = getWild(d, room);
-
+    var wild = getWild(d, sender); 
     if (!wild) {
-      replier.reply("현재 마주친 포켓몬이 없습니다. /필드 를 먼저 입력하세요.");
+      var ex = takeExpiredWild(d, sender); 
+      if (ex) {
+        var dbx = findPokemonDB(ex.pid);
+        replier.reply(sayDo(decoName, (dbx ? dbx.name : "포켓몬") + "이(가) 이미 도망갔습니다."));
+        return;
+      }
+      replier.reply(sayDo(decoName, "현재 야생 포켓몬이 없습니다.\n/필드 로 먼저 탐색해 주세요."));
       return;
     }
-
-    // 2. ★ 불일치 해결의 핵심: '기록된 번호(wild.pid)'로만 포켓몬을 판정함
-    var db = findPokemonDB(wild.pid); 
-    if (!db) { replier.reply("포켓몬 데이터 오류!"); clearWild(d, room); return; }
 
     if (u.pokemons.length >= MAX_POKEMON_SLOT) {
       replier.reply("🚫 가방이 가득 찼습니다. '/판매하위'로 정리해 주세요.");
@@ -8366,111 +8220,58 @@ var GUIDE_MAP = {
     }
 
     var t = tryCatch(u, wild.pid, ballType);
+    var db = findPokemonDB(wild.pid);
 
     if (t.success) {
-      clearWild(d, room); // 성공 시 즉시 방 비우기
-      
-      // ★ 박제된 ID(wild.pid)로 정확하게 유저에게 지급
+      clearWild(d, sender); 
       var uid = addPokemonToUser(u, wild.pid, wild.isShiny);
       
+      // 아이템 습득 로직
+      var heldItemMsg = "";
+      if (Math.random() < 0.15) {
+          var itemRoll = Math.random();
+          if (itemRoll < 0.003) { u.godBall = (u.godBall||0)+1; heldItemMsg="\n👑 [대박] [킹갓볼] 획득!"; }
+          else if (itemRoll < 0.10) { u.reroll = (u.reroll||0)+1; heldItemMsg="\n🔄 [획득] [티어리셋권] 획득!"; }
+          else if (itemRoll < 0.40) { u.dopaTicket = (u.dopaTicket||0)+1; heldItemMsg="\n💳 [획득] [도파민강화권] 획득!"; }
+          else { u.ball = (u.ball||0)+1; heldItemMsg="\n🔴 [줍줍] 몬스터볼 회수"; }
+      }
+
       var reward = calcCatchRewards(u, wild.pid);
       u.gold += reward.totalGold;
       addExpWithLevelUpMsg(u, reward.totalExp);
-      
-      saveData(d); // 즉시 물리 저장
-      checkAndNotifyTitles(u, replier);
+      commitSave(true); 
 
       var p = findUserPokemonByUid(u, uid);
-      replier.reply(
-          "🎉 " + sayDo(decoName, (wild.isShiny?"✨":"") + db.name + " 포획 성공!") + "\n" +
-          "✨ 등급: [" + (p.grade || "D") + "] / ID: #" + uid + "\n" +
-          "💰 보상: +" + fmtNum(reward.totalGold) + "💰"
-      );
-    } else {
-      wild.attempts++;
-      var leftTry = Math.max(0, (wild.maxAttempts || 5) - wild.attempts);
+      var successLine = pick(CATCH_SUCCESS_LINES);
       
+      // 고전 잠재력 레이아웃 (레벨은 독립적이므로 p.lv 그대로 표시)
+      var resultMsg = "【포획 성공】\n" +
+                      "🎉 " + decoName + "님이 " + db.name + " 포획에 성공했어요!\n\n" +
+                      "✨ 등급: 【 " + (p.grade || "D") + " 등급 】\n" +
+                      "📊 잠재력 (15점 만점)\n" +
+                      "⚔️ 힘 : " + (p.ivStr || 0) + " / 15\n" +
+                      "❤️ 체력: " + (p.ivHp ? Math.floor(p.ivHp/10) : 0) + " / 15\n" +
+                      "⚡ 공속: " + (p.ivSpd || 0) + " / 15\n" +
+                      "━━━━━━━━━━━━━━\n" +
+                      "🧬 내 포켓몬 ID #" + uid + " (Lv." + (p.lv || 1) + ")\n" +
+                      "💰 보상: +" + fmtNum(reward.totalGold) + "💰 / +" + reward.totalExp + "EXP\n" +
+                      successLine + heldItemMsg;
+
+      replier.reply(resultMsg);
+    } else {
+      wild.attempts = (wild.attempts || 0) + 1;
+      var leftTry = Math.max(0, (wild.maxAttempts || 5) - wild.attempts);
       if (leftTry <= 0 || Math.random() < (wild.attempts * 0.1)) {
-        replier.reply("💨 " + db.name + "이(가) 볼을 뿌리치고 도망갔습니다!");
-        clearWild(d, room);
+        replier.reply("💨 " + db.name + "이(가) 도망갔습니다!");
+        clearWild(d, sender); 
       } else {
-        saveData(d); // 실패 횟수 즉시 저장 (동기화)
+        commitSave(true); 
         replier.reply("💥 포획 실패! " + db.name + "이(가) 날뜁니다.\n(남은 기회: 약 " + leftTry + "회)");
       }
     }
   }
 
- // -------------------- [최종] 포획 실행 함수 (데이터 정합성 강화) --------------------
-    function handleCatch(ballType, ballName, decoName, replier) {
-      var d = loadData(); // 볼을 던지는 순간 가장 최신 파일 데이터를 로드
-      
-      if (u.pokemons.length >= MAX_POKEMON_SLOT) {
-        replier.reply("🚫 가방이 가득 찼습니다. '/판매하위'로 정리해 주세요.");
-        return;
-      }
 
-      var wild = getWild(d, room);
-
-      if (!wild) {
-        var ex = takeExpiredWild(d, room);
-        if (ex) {
-          var dbx = findPokemonDB(ex.pid);
-          replier.reply(sayDo(decoName, (dbx ? dbx.name : "포켓몬") + "이(가) 이미 도망갔습니다."));
-          return;
-        }
-        replier.reply(sayDo(decoName, "현재 야생 포켓몬이 없습니다.\n/필드 로 먼저 탐색해 주세요."));
-        return;
-      }
-
-      if (!consumeBall(u, ballType)) {
-        replier.reply(ballName + "이(가) 부족합니다.");
-        return;
-      }
-
-      var t = tryCatch(u, wild.pid, ballType);
-      var db = findPokemonDB(wild.pid);
-
-      if (t.success) {
-        clearWild(d, room);
-        var uid = addPokemonToUser(u, wild.pid, wild.isShiny);
-        
-        var heldItemMsg = "";
-        if (Math.random() < 0.15) {
-            var itemRoll = Math.random();
-            if (itemRoll < 0.003) { u.godBall = (u.godBall||0)+1; heldItemMsg="\n👑 [대박] [킹갓볼] 획득!"; }
-            else if (itemRoll < 0.10) { u.reroll = (u.reroll||0)+1; heldItemMsg="\n🔄 [획득] [티어리셋권] 획득!"; }
-            else if (itemRoll < 0.40) { u.dopaTicket = (u.dopaTicket||0)+1; heldItemMsg="\n💳 [획득] [도파민강화권] 획득!"; }
-            else { u.ball = (u.ball||0)+1; heldItemMsg="\n🔴 [줍줍] 몬스터볼 회수"; }
-        }
-
-        var reward = calcCatchRewards(u, wild.pid);
-        u.gold += reward.totalGold;
-        addExpWithLevelUpMsg(u, reward.totalExp);
-        
-        saveData(d); // 즉시 물리 저장
-        checkAndNotifyTitles(u, replier);
-
-        var p = findUserPokemonByUid(u, uid);
-        var fx = wild.isShiny ? "✨✨✨ 이로치 포획 성공! ✨✨✨\n" : "";
-        
-        replier.reply(
-            fx + "🎉 " + sayDo(decoName, db.name + " 포획 성공!") + "\n" +
-            "✨ 등급: [" + (p.grade || "D") + "] / ID: #" + uid + "\n" +
-            "💰 보상: +" + fmtNum(reward.totalGold) + "💰" + heldItemMsg
-        );
-      } else {
-        wild.attempts = (wild.attempts || 0) + 1;
-        var leftTry = Math.max(0, (wild.maxAttempts || 5) - wild.attempts);
-        
-        if (leftTry <= 0 || Math.random() < (wild.attempts * 0.1)) {
-          replier.reply("💨 " + db.name + "이(가) 도망갔습니다!");
-          clearWild(d, room);
-        } else {
-          saveData(d); // 실패 횟수 즉시 저장
-          replier.reply("💥 포획 실패! " + db.name + "이(가) 날뜁니다.\n(남은 기회: 약 " + leftTry + "회)");
-        }
-      }
-    }
 
 // 🎯 포획 명령어 구역
     if (msg === "/몬스터볼" || msg === "/몬" || msg === "/ㅁ") {
@@ -8619,151 +8420,155 @@ var GUIDE_MAP = {
       replier.reply("🏷️ " + sender + "님의 보유 칭호 목록\n" + "현재 장착: " + (u.activeTitle || "뉴비") + "\n\n" + myStr + "\n" + "💡 사용법: /칭호 [번호]\n" + "💡 전체 목록 확인: /칭호 도감");
       return;
     }
-    if (msg.indexOf("/도감") === 0) {
-      // [버그 수정] 어떤 명령어인지 먼저 확인해서 잘라낼 길이를 정함
-      var cmdStr = "/도감";
-      var dexMode = 1;      // 기본 1세대
-      if (msg.indexOf("/도감2") === 0) {
-        cmdStr = "/도감2";
-        dexMode = 2;
-      } else if (msg.indexOf("/도감 2") === 0) {
-        cmdStr = "/도감 2";
-        dexMode = 2;
-      }
-      var t = getTargetFromMsg(d, sender, msg, cmdStr);
+    if (msg.indexOf("/도감") === 0 || msg.indexOf("/도감2") === 0) {
+      // 1. 세대 모드 판별
+      var isGen2 = (msg.indexOf("/도감2") === 0);
+      var cmdPrefix = isGen2 ? "/도감2" : "/도감";
+      var dexMode = isGen2 ? 2 : 1;
+
+      // 2. [핵심] 타겟 유저 찾기 (이름이 없으면 본인, 있으면 해당 유저)
+      var t = getTargetFromMsg(d, sender, msg, cmdPrefix);
       if (!t) {
-        replier.reply("유저를 찾을 수 없습니다.");
+        replier.reply("🚫 존재하지 않는 유저입니다.\n사용법: " + cmdPrefix + " [닉네임]");
         return;
       }
+      
       var target = t.user;
       var targetName = t.name;
+
+      // 3. 도감 데이터 안전장치
       ensureUserDex(target);
-      // 2세대 DB인지 1세대 DB인지 선택
-      var dexDb = (dexMode === 2) ? POKEMON_DB_GEN2 : POKEMON_DB;
-      // ★ [핵심] 가방을 뒤져서 도감에 '이로치' 도장 찍기 (동기화)
-      if (target.pokemons) {
-        for (var k = 0; k < target.pokemons.length; k++) {
-          var p = target.pokemons[k];
-          if (p.shiny) {
-            var pidStr = String(p.pid);
-            if (!target.dex[pidStr]) {
-              target.dex[pidStr] = {
-  seen: 0, 
-  caught: 0, 
-  maxGrade: "D", 
-  hasShiny: true};
-            } else {
-              target.dex[pidStr].hasShiny = true;
-            }
-          }
-        }
-      }
+
+      // 4. 해당 세대 DB 필터링
+      var dexDb = ALL_POKEMON_DB.filter(function(p) {
+          return dexMode === 2 ? p.id > 151 : p.id <= 151;
+      });
+
       var total = dexDb.length;
       var uniqueCaught = 0;
       var shinyCount = 0;
-      for (var i = 0; i < dexDb.length; i++) {
-        var id = String(dexDb[i].id);
-        if (target.dex[id]) {
-          if (target.dex[id].caught > 0) 
-            uniqueCaught++;
-          if (target.dex[id].hasShiny) 
-            shinyCount++;
+
+      // 수집 데이터 계산
+      for (var i = 0; i < total; i++) {
+        var pid = String(dexDb[i].id);
+        var rec = target.dex[pid];
+        if (rec && rec.caught > 0) {
+          uniqueCaught++;
+          if (rec.hasShiny) shinyCount++;
         }
       }
-      var rate = Math.floor((uniqueCaught / total) * 1000) / 10;
-      var summary = "📖 " + targetName + "님의 포켓몬 도감 (" + (dexMode === 2 ? "2세대" : "1세대") + ")\n" + "━━━━━━━━━━━━━━\n" + "✅ 수집률: " + uniqueCaught + " / " + total + " (" + rate + "%)\n" + "✨ 이로치 발견: " + shinyCount + "종\n\n" + "전체보기로 상세 목록을 확인하세요.\n" + "전환: /도감(1세대), /도감2(2세대)";
-      // 상세 목록 출력
-      var full = "\n\n[" + (dexMode === 2 ? "2세대" : "1세대") + " 도감 목록 / 최고 티어]\n" + "━━━━━━━━━━━━━━\n";
+
+      var rate = (total === 0) ? 0 : (Math.floor((uniqueCaught / total) * 1000) / 10);
+      
+      // 5. [요약본] 출력
+      var summary = "📖 " + targetName + "님의 포켓몬 도감 (" + (dexMode === 2 ? "2세대 성도" : "1세대 관동") + ")\n" +
+                    "━━━━━━━━━━━━━━\n" +
+                    "✅ 수집률: " + uniqueCaught + " / " + total + " (" + rate + "%)\n" +
+                    "✨ 이로치 발견: " + shinyCount + "종\n\n" +
+                    "전체보기로 상세 목록을 확인하세요.\n" +
+                    "💡 전환: /도감 (1세대), /도감2 (2세대)";
+
+      // 6. [상세 목록] 출력
+      var full = "[" + (dexMode === 2 ? "2세대" : "1세대") + " 도감 목록 / 최고 티어]\n" +
+                 "━━━━━━━━━━━━━━\n";
+      
       for (var j = 0; j < dexDb.length; j++) {
         var pp = dexDb[j];
         var pid = String(pp.id);
-        var rec = target.dex[pid] || {
-  seen: 0, 
-  caught: 0, 
-  maxGrade: ""};
-        var mark = rec.caught ? "✔" : rec.seen ? "👀" : "□";
+        var rec = target.dex[pid] || { seen: 0, caught: 0, maxGrade: "" };
+        
+        var mark = rec.caught ? "✔" : (rec.seen ? "👀" : "□");
         var infoMsg = "";
+        
         if (rec.caught) {
           var grade = rec.maxGrade || "D";
           var crown = (grade === "S") ? " 👑" : "";
           var star = (rec.hasShiny) ? " ✨" : "";
           infoMsg = " [" + grade + "등급]" + crown + star;
         }
+        
         full += mark + " #" + pp.id + " " + pp.name + infoMsg + "\n";
       }
+
+      // 접기 함수로 전송
       replyFold(replier, summary, full);
       return;
     }
-    if (msg.indexOf("/이로치") === 0) {
-      // 1. [버그 수정 핵심] 명령어가 무엇인지 정확히 파악하여 길이를 잰다
-      var cmdStr = "/이로치";
-      var shinyMode = 1;      // 기본 1세대
-      // 긴 명령어부터 먼저 체크해야 함
-      if (msg.indexOf("/이로치도감2") === 0) {
-        cmdStr = "/이로치도감2";
-        shinyMode = 2;
-      } else if (msg.indexOf("/이로치2") === 0) {
-        cmdStr = "/이로치2";
-        shinyMode = 2;
-      } else if (msg.indexOf("/이로치도감") === 0) {
-        cmdStr = "/이로치도감";
-        shinyMode = 1;
-      }
-      var t = getTargetFromMsg(d, sender, msg, cmdStr);
+
+    if (msg.indexOf("/이로치") === 0 || msg.indexOf("/이로치2") === 0) {
+      // 1. 세대 및 명령어 정보 판별
+      var isGen2 = (msg.indexOf("/이로치2") === 0);
+      var cmdPrefix = isGen2 ? "/이로치2" : "/이로치";
+      var shinyDb = isGen2 ? POKEMON_DB_GEN2 : POKEMON_DB;
+
+      // 2. 타겟 유저 찾기 (getTargetFromMsg 활용)
+      var t = getTargetFromMsg(d, sender, msg, cmdPrefix);
       if (!t) {
-        replier.reply("존재하지 않는 유저입니다.\n혹시 닉네임을 확인해 주세요.");
+        replier.reply("🚫 존재하지 않는 유저입니다.\n사용법: " + cmdPrefix + " [닉네임]");
         return;
       }
+      
       var target = t.user;
       var targetName = t.name;
+
+      // 3. 도감 데이터 기초화
       ensureUserDex(target);
-      // 2세대인지 1세대인지 DB 선택
-      var shinyDb = (shinyMode === 2) ? POKEMON_DB_GEN2 : POKEMON_DB;
-      // 3. [동기화] 가방에 있는 이로치 정보를 도감에 도장 찍기
+
+      // 4. [핵심] 가방-도감 이로치 데이터 강제 동기화
+      // 가방에 이로치가 있는데 도감에 체크가 안 된 경우를 전수조사하여 도장에 쾅 찍어줍니다.
       if (target.pokemons) {
         for (var k = 0; k < target.pokemons.length; k++) {
           var p = target.pokemons[k];
-          // 만약 가방에 이로치가 있는데?
           if (p.shiny) {
             var pidStr = String(p.pid);
-            // 도감에 기록이 없거나, shiny 체크가 안 되어 있다면?
             if (!target.dex[pidStr]) {
-              target.dex[pidStr] = {
-  seen: 0, 
-  caught: 0, 
-  maxGrade: "D", 
-  hasShiny: true};
+              target.dex[pidStr] = { seen: 0, caught: 1, maxGrade: p.grade || "D", hasShiny: true };
             } else {
-              target.dex[pidStr].hasShiny = true;              // 도장 쾅!
+              target.dex[pidStr].hasShiny = true;
             }
           }
         }
       }
+
+      // 5. 이로치 수집 목록 추출
       var myShinies = [];
       for (var i = 0; i < shinyDb.length; i++) {
         var db = shinyDb[i];
         var pid = String(db.id);
-        // 도감에 이로치 마크가 있는 애들만 수집
         if (target.dex[pid] && target.dex[pid].hasShiny) {
           myShinies.push(db);
         }
       }
-      // 5. 결과 출력
-      if (myShinies.length === 0) {
-        replier.reply("✨ " + targetName + "님은 아직 발견한 " + (shinyMode === 2 ? "2세대 " : "1세대 ") + "이로치 포켓몬이 없습니다.");
-        return;
-      }
+
+      // 6. 결과 출력 (요약 및 목록 분리)
       var totalShiny = shinyDb.length;
-      var rate = Math.floor((myShinies.length / totalShiny) * 1000) / 10;
-      var out = "✨ " + targetName + "님의 샤이니 컬렉션 (" + (shinyMode === 2 ? "2세대" : "1세대") + ") ✨\n" + "수집 현황: " + myShinies.length + " / " + totalShiny + " (" + rate + "%)\n" + "━━━━━━━━━━━━━━\n";
-      for (var k = 0; k < myShinies.length; k++) {
-        var s = myShinies[k];
-        out += "🌟 #" + s.id + " " + s.name + "\n";
+      var collectedCount = myShinies.length;
+      var rate = (totalShiny === 0) ? 0 : Math.floor((collectedCount / totalShiny) * 1000) / 10;
+
+      var summary = "✨ " + targetName + "님의 샤이니 컬렉션 (" + (isGen2 ? "2세대" : "1세대") + ")\n" +
+                    "━━━━━━━━━━━━━━\n" +
+                    "🏆 수집 현황: " + collectedCount + " / " + totalShiny + " (" + rate + "%)\n\n" +
+                    "전체보기로 획득한 이로치 리스트를 확인하세요.\n" +
+                    "💡 전환: /이로치 (1세대), /이로치2 (2세대)";
+
+      var full = "[" + targetName + "님의 이로치 획득 리스트]\n" +
+                 "━━━━━━━━━━━━━━\n";
+      
+      if (collectedCount === 0) {
+        full += "(아직 발견한 이로치 포켓몬이 없습니다.)";
+      } else {
+        for (var m = 0; m < myShinies.length; m++) {
+          var s = myShinies[m];
+          full += "🌟 #" + s.id + " " + s.name + "\n";
+        }
       }
-      out += "━━━━━━━━━━━━━━\n" + "이로치는 일반 포켓몬보다 강력합니다!\n" + "전환: /이로치(1세대), /이로치2(2세대)";
-      replier.reply(out);
+
+      // 사장님의 '접기 전용' 함수로 깔끔하게 전송
+      replyFold(replier, summary, full);
       return;
     }
+
+
     if (msg === "/탐험취소") {
       if (!u.exploration) {
         replier.reply("현재 탐험 중인 포켓몬이 없습니다.");
@@ -8979,81 +8784,55 @@ var GUIDE_MAP = {
         return;
       }
       u.lastEnhanceAt = nowE;
+
       var spE = msg.split(" ");
-      if (spE.length < 2) {
-        replier.reply("사용법: /강화 [포켓몬UID]\n예: /강화 12");
-        return;
-      }
+      if (spE.length < 2) { replier.reply("사용법: /강화 [포켓몬UID]"); return; }
       var uidEnh = parseInt(spE[1], 10);
-      if (!uidEnh) {
-        replier.reply("포켓몬UID가 올바르지 않습니다.");
-        return;
-      }
+      if (isNaN(uidEnh)) { replier.reply("포켓몬UID를 숫자로 입력해주세요."); return; }
+      
       var p = findUserPokemonByUid(u, uidEnh);
-      if (!p) {
-        replier.reply("해당 포켓몬을 찾을 수 없습니다.");
-        return;
-      }
-      if (isPokemonBusy(u, p.uid)) {
-        replier.reply("🚫 해당 포켓몬은 현재 탐험 중입니다.\n돌아올 때까지 기다려주세요.");
-        return;
-      }
-      if (p.enh >= ENHANCE_MAX) {
-        replier.reply("이미 최대 강화 단계(" + ENHANCE_MAX + "강)입니다.");
-        return;
-      }
+      if (!p) { replier.reply("해당 포켓몬을 찾을 수 없습니다."); return; }
+      if (isPokemonBusy(u, p.uid)) { replier.reply("🚫 포켓몬이 탐험 중입니다."); return; }
+      if (p.enh >= ENHANCE_MAX) { replier.reply("이미 최대 강화 단계(" + ENHANCE_MAX + "강)입니다."); return; }
+
       var dbp = findPokemonDB(p.pid);
-      var pName = dbp ? dbp.name : "포켓몬";
       var nextEnh = (p.enh || 0) + 1;
       var rarity = dbp ? dbp.rarity : 2;
       var cost = enhanceCostByRarity(nextEnh, rarity);
+
       if (u.gold < cost) {
-        replier.reply(sender + "님, 강화 비용이 부족합니다.\n필요: " + fmtNum(cost) + "💰\n보유: " + fmtNum(u.gold) + "💰");
+        replier.reply(sender + "님, 골드가 부족합니다.\n필요: " + fmtNum(cost) + "💰\n보유: " + fmtNum(u.gold) + "💰");
         return;
       }
+
       u.gold -= cost;
-      // 2. [통계] 강화비 누적
-      if (!u.stats.totalSpentEnhance) 
-        u.stats.totalSpentEnhance = 0;
+      if (!u.stats.totalSpentEnhance) u.stats.totalSpentEnhance = 0;
       u.stats.totalSpentEnhance += cost;
-      // 3. 강화 시도
+
       var rates = enhanceRatesByRarity(nextEnh, u.trainerLv, rarity);
       var rVal = Math.random();
       var resultType = ENH_RESULT_KEEP;
-      if (rVal < rates.success) 
-        resultType = ENH_RESULT_UP;
-      else if (rVal < rates.success + rates.keep) 
-        resultType = ENH_RESULT_KEEP;
-      else 
-        resultType = ENH_RESULT_DOWN;
+
+      if (rVal < rates.success) resultType = ENH_RESULT_UP;
+      else if (rVal < rates.success + rates.keep) resultType = ENH_RESULT_KEEP;
+      else resultType = ENH_RESULT_DOWN;
+
       var before = p.enh;
-      var after = before;
-      var evoMsg = null;
       if (resultType === ENH_RESULT_UP) {
-        p.enh = nextEnh;
-        p.lv = p.enh + 1;        // ★ [수정] 강화 성공 시 레벨도 같이 올려줌 (불일치 해결)
-        after = nextEnh;
-        // ★ [수정] 없는 함수(tryAutoEvolveByEnh) 삭제 -> checkLevelEvolution 사용
-        var evoResult = checkLevelEvolution(u, p);
-        if (evoResult) {
-          evoMsg = "\n🧬 진화 성공! " + evoResult;
-          dexCaught(u, p.pid, p.grade, p.shiny);
-        }
+        p.enh = nextEnh; // ★ 오직 강화 수치만 변경
       } else if (resultType === ENH_RESULT_DOWN) {
         p.enh = Math.max(0, before - 1);
-        p.lv = Math.max(1, p.enh + 1);        // 떨어진 레벨도 반영
-        after = p.enh;
       }
+
       commitSave(true);
-      var resultMsg = buildEnhResultMsg(sender, p, before, after, resultType);
-      if (evoMsg) {
-        var evolvedName = getDisplayName(p);
-        resultMsg += "\n\n" + evoMsg;        // 진화 메시지 추가
-      }
+      
+      // 결과 멘트 빌드 및 출력 (레벨 관련 언급은 삭제됨)
+      var resultMsg = buildEnhResultMsg(sender, p, before, p.enh, resultType);
       var nextInfo = buildNextEnhInfoLine(p, resultType, u);
       replier.reply(resultMsg + nextInfo);
       return;
     }
+
     if (msg === "/출석" || msg === "/출석체크") {
       var r = doAttendanceCheck(u, sender);
       // 출석 성공 시 챔피언 체크
@@ -9078,7 +8857,7 @@ var GUIDE_MAP = {
         return;
       }
       var uidD = parseInt(spD[1], 10);
-      if (!uidD) {
+      if (isNaN(uidD)) {
         replier.reply("포켓몬UID가 올바르지 않습니다.");
         return;
       }
@@ -9099,16 +8878,19 @@ var GUIDE_MAP = {
         replier.reply("도파민강화권이 없습니다.\n/상점 에서 구매해주세요.");
         return;
       }
+
       u.dopaTicket--;
       u.stats.totalDopaUsed = (u.stats.totalDopaUsed || 0) + 1;
       var before = (typeof pD.enh === "number") ? pD.enh : 0;
       var pNameD = getDisplayName(pD);
-      // 🎲 확률 주사위 굴리기 (0.0 ~ 1.0)
+      
+      // 🎲 확률 주사위 굴리기
       var roll = Math.random();
       var out = "";
       var header = "🎰 도파민 강화 시도!\n" + decoName + "님이 운명을 겁니다...\n━━━━━━━━━━━━━━\n";
       var targetLine = "👾 대상: #" + uidD + " " + pNameD + "\n";
-      // 💀 [1%] 파괴 (대참사)
+
+      // 1. [파괴] 1% 확률
       if (roll < 0.01) {
         var idxD = -1;
         for (var k = 0; k < u.pokemons.length; k++) {
@@ -9121,43 +8903,48 @@ var GUIDE_MAP = {
           u.pokemons.splice(idxD, 1);
           u.stats.totalDopaDestroy = (u.stats.totalDopaDestroy || 0) + 1;
         }
-        out = header + "💀 [파괴] 💀\n\n도파민 과부하로 포켓몬이 소멸했습니다...\n(1%의 불운이 적중했습니다)\n\n" + targetLine;
+        out = header + "💀 [파괴] 💀\n\n도파민 과부하로 포켓몬이 소멸했습니다!\n\n" + targetLine;
         commitSave(true);
         checkAndNotifyTitles(u, replier);
         replier.reply(out);
         return;
-      } else if (roll < 0.41) {
+      } 
+      
+      // 2. [대성공] 40% 확률
+      else if (roll < 0.41) {
         var upAmount = randInt(2, 10);
         var after = Math.min(ENHANCE_MAX, before + upAmount);
         pD.enh = after;
-        // 진화 체크
-        var evoMsg = tryAutoEvolveByEnh(pD);
-        if (evoMsg) 
-          pNameD = getDisplayName(pD);        // 진화했으면 이름 갱신
-        out = header + "🚀 [대성공] 🚀\n\n한계를 돌파했습니다! (+" + upAmount + "강)\n\n" + targetLine + "🔥 " + before + "강 → " + after + "강 🔥";
-        if (evoMsg) 
-          out += "\n\n🧬 진화 성공!\n" + evoMsg;
-      } else if (roll < 0.71) {
-        out = header + "💨 [유지] 💨\n\n아무 일도 일어나지 않았습니다.\n(파괴되지 않은 게 다행일지도?)\n\n" + targetLine + "🔥 현재 유지: " + before + "강";
-      } else {
+        
+        // ★ [개편 핵심] 강화는 레벨이나 진화를 건드리지 않습니다.
+        out = header + "🚀 [대성공] 🚀\n\n한계를 돌파했습니다! (+" + upAmount + "강)\n\n" + targetLine + "🔥 " + before + "강 → " + after + "강 🔥\n(레벨은 사냥을 통해 올려주세요!)";
+      } 
+      
+      // 3. [유지] 30% 확률
+      else if (roll < 0.71) {
+        out = header + "💨 [유지] 💨\n\n아무 일도 일어나지 않았습니다.\n\n" + targetLine + "🔥 현재 유지: " + before + "강";
+      } 
+      
+      // 4. [하락] 나머지 확률
+      else {
         var downAmount = randInt(2, 10);
-        var after = Math.max(0, before - downAmount);        // 0 밑으로는 안 내려감
+        var after = Math.max(0, before - downAmount);
         pD.enh = after;
-        // ★ [핵심 추가] 0강으로 떨어졌는지 확인 (태초마을 스택 쌓기)
+
         if (after === 0 && before > 0) {
-          // 태초마을 카운트 증가 (칭호 조건)
           u.stats.totalDopaReset = (u.stats.totalDopaReset || 0) + 1;
-          out = header + "📉 [태초마을] 📉\n\n" + "강화 수치가 바닥으로 곤두박질쳤습니다...\n" + "( 0강 초기화 😱 스택 +1 )\n\n" + targetLine + "🔥 " + before + "강 → 0강";
+          out = header + "📉 [태초마을] 📉\n\n수치가 바닥으로 곤두박질쳤습니다!\n(0강 초기화 😱 스택 +1)\n\n" + targetLine + "🔥 " + before + "강 → 0강";
         } else {
-          // 0강까지는 안 갔고 그냥 떨어짐
-          out = header + "📉 [하락] 📉\n\n" + "으악! 강화 수치가 미끄러졌습니다...\n" + "( -" + downAmount + "강 )\n\n" + targetLine + "🔥 " + before + "강 → " + after + "강";
+          out = header + "📉 [하락] 📉\n\n으악! 강화 수치가 미끄러졌습니다!\n( -" + downAmount + "강 )\n\n" + targetLine + "🔥 " + before + "강 → " + after + "강";
         }
       }
+
       commitSave(true);
       checkAndNotifyTitles(u, replier);
       replier.reply(out);
       return;
     }
+
     if (msg === "/배틀" || msg.indexOf("/배틀 ") === 0) {
       ensureUserStats(u);
       // ✅ 함수 존재 체크 (요즘 너 에러 난 핵심이 이거였음)
@@ -9624,46 +9411,44 @@ var GUIDE_MAP = {
     }
 
   // -------------------- [신규] 엔트리(Party) 시스템 --------------------
-  // 1. [수정됨] 엔트리 확인 (장비 표시 + 설명 수정)
   if (msg === "/엔트리" || msg === "/파티" || msg === "/내팀") {
-      var list = [];
-      var totalPower = 0;
+    var partyList = [];
+    var totalPower = 0;
+    
+    for (var i = 0; i < u.party.length; i++) {
+      var uid = u.party[i];
+      var p = findUserPokemonByUid(u, uid);
+      if (!p) { u.party.splice(i, 1); i--; continue; } // 유령 데이터 자동 삭제
       
-      for(var i=0; i<u.party.length; i++) {
-          var uid = u.party[i];
-          var p = findUserPokemonByUid(u, uid);
-          if(!p) {
-               u.party.splice(i, 1); i--; continue;
-          }
-          
-          var pName = getDisplayName(p);
-          var cp = calcBattlePower(p);
-          totalPower += cp;
-          
-          // 친밀도 하트
-          var heart = (p.friendship >= 220) ? "❤️" : (p.friendship >= 150) ? "🧡" : "🖤";
-          
-          // ★ [신규] 장비 아이콘 표시
-          var equipStr = "";
-          if (p.equip && EQUIP_DB[p.equip]) {
-              equipStr = " [" + EQUIP_DB[p.equip].icon + p.equip + "]";
-          }
+      var pName = getDisplayName(p);
+      var cp = calcBattlePower(p);
+      totalPower += cp;
+      
+      // 친밀도 및 장비 표시
+      var heart = (p.friendship >= 220) ? "❤️" : (p.friendship >= 150) ? "🧡" : "🖤";
+      var equipStr = (p.equip && EQUIP_DB[p.equip]) ? (" [" + EQUIP_DB[p.equip].icon + p.equip + "]") : "";
+      var status = isPokemonBusy(u, p.uid) ? " (🧭)" : "";
+      
+      partyList.push(
+        (i + 1) + ". #" + p.uid + " " + pName + " (Lv." + (p.lv || 1) + ")\n" +
+        "   └ 투력: " + fmtNum(cp) + " / 강화: " + (p.enh || 0) + "강 " + heart + equipStr + status
+      );
+    }
+    
+    var summary = "🎒 " + decoName + "님의 엔트리 (" + partyList.length + "/6)\n" +
+                  "⚔️ 총 전투력: " + fmtNum(totalPower) + "\n\n" +
+                  "전체보기로 상세 멤버를 확인하세요.";
+                  
+    var full = "━━━━━━━━━━━━━━\n" +
+               "⚔️ [출전 멤버 리스트]\n" +
+               "━━━━━━━━━━━━━━\n" +
+               (partyList.length > 0 ? partyList.join("\n") : "(비어있음)") +
+               "\n━━━━━━━━━━━━━━\n" +
+               "💡 추가/제거: '/선택 [UID]'\n" +
+               "💡 선수교체: '/교체 [뺄UID] [넣을UID]'";
 
-          list.push((i+1) + ". #" + p.uid + " " + pName + " (Lv." + p.lv + ") " + heart + equipStr + "\n   └ 투력: " + fmtNum(cp) + " / 친밀: " + p.friendship);
-      }
-      
-      if (list.length === 0) {
-          replier.reply("🎒 엔트리가 비어있습니다.\n'/내박스'에서 포켓몬을 선택해주세요.");
-      } else {
-          replier.reply(
-              "🎒 " + decoName + "님의 엔트리 (" + list.length + "/6)\n" +
-              "총 전투력: " + fmtNum(totalPower) + "\n━━━━━━━━━━━━━━\n" +
-              list.join("\n") + "\n━━━━━━━━━━━━━━\n" +
-              "💡 추가/제거: '/선택 [UID]'\n" +
-              "💡 선수교체: '/교체 [뺄UID] [넣을UID]'"
-          );
-      }
-      return;
+    replyFold(replier, summary, full);
+    return;
   }
 
 
@@ -10085,10 +9870,11 @@ if (msg === "/챔피언 도전") {
         replier.reply("⏰ 레이드가 종료되었습니다.");
         return;
       }
-// [수정됨] 엔트리 체크
-if (!u.party || u.party.length < 6) {
-    replier.reply("🚫 레이드에 참여하려면 엔트리 6마리가 꽉 차있어야 합니다.\n(현재: " + (u.party?u.party.length:0) + "마리)\n👉 '/내박스'에서 멤버를 보충하세요!"); return;
-}
+      // [수정됨] 엔트리 체크
+      if (!u.party || u.party.length < 6) {
+        replier.reply("🚫 레이드에 참여하려면 엔트리 6마리가 꽉 차있어야 합니다.\n(현재: " + (u.party?u.party.length:0) + "마리)\n👉 '/내박스'에서 멤버를 보충하세요!"); 
+        return;
+      }
 
       if (nowMs() - u.lastRaidAt < RAID_COOLDOWN_MS) {
         var remain = Math.ceil((RAID_COOLDOWN_MS - (nowMs() - u.lastRaidAt)) / 1000);
@@ -10104,40 +9890,38 @@ if (!u.party || u.party.length < 6) {
       }
       if (!d.worldBoss.attackCounts) 
         d.worldBoss.attackCounts = {};
+      
       var myCount = d.worldBoss.attackCounts[sender] || 0;
       var FINISHER_REQ = 30;
       var isFinisherQuiz = ((myCount + 1) % FINISHER_REQ === 0);
       var qText = "";
       var ans = 0;
-      // [A] 필살기용: 고난이도 (소수점/음수 절대 안 나옴)
+
+      // [A] 필살기용: 고난이도
       if (isFinisherQuiz) {
         var qType = randInt(1, 4);
         if (qType === 1) {
-          // [안전장치] 나눗셈: 역연산으로 딱 떨어지는 수만 출제
-          var divisor = randInt(3, 12);          // 나누는 수
-          var answer = randInt(11, 30);          // 미리 정한 정답
-          var dividend = divisor * answer;          // 나눠지는 수 (곱해서 만듦)
-          qText = "🔥[필살기] " + dividend + " \xf7 " + divisor;
+          var divisor = randInt(3, 12);
+          var answer = randInt(11, 30);
+          var dividend = divisor * answer;
+          qText = "🔥[필살기] " + dividend + " ÷ " + divisor;
           ans = answer;
         } else if (qType === 2) {
-          // [혼합] 괄호 + 곱셈 (전부 양수라 음수 불가)
           var n1 = randInt(5, 20);
           var n2 = randInt(5, 20);
           var n3 = randInt(2, 9);
-          qText = "🔥[필살기] (" + n1 + " + " + n2 + ") \xd7 " + n3;
+          qText = "🔥[필살기] (" + n1 + " + " + n2 + ") × " + n3;
           ans = (n1 + n2) * n3;
         } else if (qType === 3) {
-          // [혼합] 곱셈 + 덧셈 (전부 양수)
           var n1 = randInt(50, 100);
           var n2 = randInt(5, 12);
           var n3 = randInt(3, 9);
-          qText = "🔥[필살기] " + n1 + " + " + n2 + " \xd7 " + n3;
+          qText = "🔥[필살기] " + n1 + " + " + n2 + " × " + n3;
           ans = n1 + (n2 * n3);
         } else {
-          // [곱셈] 두 자리 수 곱셈 (전부 양수)
           var n1 = randInt(11, 19);
           var n2 = randInt(11, 19);
-          qText = "🔥[필살기] " + n1 + " \xd7 " + n2;
+          qText = "🔥[필살기] " + n1 + " × " + n2;
           ans = n1 * n2;
         }
       } else {
@@ -10147,25 +9931,31 @@ if (!u.party || u.party.length < 6) {
           qText = n1 + " + " + n2;
           ans = n1 + n2;
         } else {
-          // [안전장치] 뺄셈: 무조건 큰 수에서 작은 수를 뺌 (음수 방지)
           var max = Math.max(n1, n2);
           var min = Math.min(n1, n2);
           qText = max + " - " + min;
           ans = max - min;
         }
       }
+
       u.raidCaptcha = {
-  ans: ans, 
-  finisher: isFinisherQuiz, 
-  expire: new Date().getTime() + 15000};
+        ans: ans, 
+        finisher: isFinisherQuiz, 
+        expire: new Date().getTime() + 15000
+      };
       commitSave(true);
+
+      // 출력 멘트 정리
       var countMsg = "\n(누적 공격: " + myCount + "회 / 필살기까지 " + (FINISHER_REQ - (myCount % FINISHER_REQ)) + "회)";
       if (isFinisherQuiz) {
         countMsg = "\n🔥 [필살기 발동] 고난이도 문제입니다! 집중하세요!!";
       }
-      replier.reply("🔒 [공격 코드] " + qText + " = ?" + countMsg);
+
+      // ✅ 사장님 코드의 변수명 qText와 decoName을 정확히 매칭했습니다.
+      replier.reply("🔒 [" + decoName + "님의 공격 코드]\n" + qText + " = ?\n" + countMsg);
       return;
     }
+
   }  catch (e) {
   // <--- ★ 2. 맨 아래 닫기 직전에 이거 추가
   Log.error("🚨 에러 발생: " + e + " (Line: " + (e.lineNumber || "Unknown") + ")");
