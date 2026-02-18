@@ -5740,9 +5740,6 @@ function getRaidPower(u) {
     return totalPower;
 }
 
-// ==================================================================
-// ⚔️ [최종 완결] 레이드 공격 함수 (장비 데이터 동기화 버전)
-// ==================================================================
 function executeRaidAttack(d, room, sender, u, replier, decoName, finisherReady) {
   var b = d.worldBoss;
   if (!b || !b.active || b.endTime <= new Date().getTime()) {
@@ -5759,7 +5756,6 @@ function executeRaidAttack(d, room, sender, u, replier, decoName, finisherReady)
   var raidBuffMult = 60;
   var dmg = Math.floor(power * randomRate * raidBuffMult);
 
-  // --- [장비 효과 로직] ---
   var leaderUid = (u.champTeam && u.champTeam[0]) || (u.party && u.party[0]);
   var leaderP = findUserPokemonByUid(u, leaderUid);
   
@@ -5769,8 +5765,8 @@ function executeRaidAttack(d, room, sender, u, replier, decoName, finisherReady)
     equipVal = EQUIP_DB[leaderP.equip].val;
   }
 
-  var critChance = 0.15; // 기본 15%
-  var critMult = 3.0;    // 기본 3배
+  var critChance = 0.15;
+  var critMult = 3.0;
   var itemMsg = "";
 
   if (equipType === "raid_crit_rate") {
@@ -5778,9 +5774,8 @@ function executeRaidAttack(d, room, sender, u, replier, decoName, finisherReady)
     itemMsg = " (👓두둥등장!)";
   } 
   else if (equipType === "raid_crit_dmg") {
-    // ★ [개선] 이제 EQUIP_DB의 val(5.0)을 그대로 사용하여 5배 적용
     critMult = equipVal; 
-    itemMsg = " (🌶해리의 매운맛!)";
+    itemMsg = " (??해리의 매운맛!)";
   }
 
   var isCrit = Math.random() < critChance;
@@ -5803,7 +5798,7 @@ function executeRaidAttack(d, room, sender, u, replier, decoName, finisherReady)
   if (!b.logs[sender]) b.logs[sender] = 0;
   b.logs[sender] += dmg;
 
-  var dropCoin = 1 + Math.floor(dmg / 15000);
+  var dropCoin = 1 + Math.floor(dmg / 75000);
   dropCoin = Math.min(1000, dropCoin);
   if (finisherReady) dropCoin *= 2;
   b.rewardPool = (b.rewardPool || 0) + dropCoin;
@@ -5818,8 +5813,13 @@ function executeRaidAttack(d, room, sender, u, replier, decoName, finisherReady)
     return;
   }
 
+  // ★ [핵심 수정] 부상 발생 시 시간을 기록하여 공격을 막습니다.
   var isInjured = Math.random() < 0.05;
-  var injureMsg = isInjured ? "\n🚑 [부상] 보스의 반격에 당했습니다! (2분간 치료 필요)" : "\n💨 가볍게 반격을 피했습니다!";
+  var injureMsg = "\n💨 가볍게 반격을 피했습니다!";
+  if (isInjured) {
+    u.lastRaidAt = new Date().getTime(); // 부상 시간 기록
+    injureMsg = "\n🚑 [부상] 보스의 반격에 당했습니다! (2분간 치료 필요)";
+  }
   
   commitSave(true);
   replier.reply("⚔️ [레이드] " + decoName + "님의 총공격!\n━━━━━━━━━━━━━━\n" + hitIcon + " " + hitTag + ": " + b.name + "에게 -" + fmtNum(dmg) + " 피해!\n💰 금고 적립: +" + dropCoin + "코인" + injureMsg);
@@ -5843,9 +5843,12 @@ function response(room, msg, sender, isGroupChat, replier, imageDB) {
     // ----------------------------------------------------------------------
     // 🎲 [정식] 돌발 레이드 로직 (0.08% 확률 + 1시간 쿨타임)
     // ----------------------------------------------------------------------
-    // 1. 좀비 보스 데이터 정리
-    if (d.worldBoss && d.worldBoss.endTime && d.worldBoss.endTime <= new Date().getTime()) {
-      d.worldBoss = null;
+ // 1. 좀비 보스 데이터 정리 및 자동 정산 로직
+    if (d.worldBoss && d.worldBoss.active && d.worldBoss.endTime <= new Date().getTime()) {
+      // ★ 시간이 종료되면 자동으로 정산 리포트를 띄우고 보상을 분배합니다.
+      var timeoutMsg = endRaidBoss(d, false); 
+      replier.reply(timeoutMsg);
+      commitSave(true);
     }
     if (!d.worldBoss || !d.worldBoss.active) {
       // 쿨타임 체크 (전역 변수 사용)
