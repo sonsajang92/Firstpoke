@@ -97,7 +97,7 @@ var SHOP_ITEMS = {
 // 🏰 [다코타 상점] 통합 데이터베이스
 var DAKOTA_ITEMS = {
   "장비상자": { price: 100, icon: "📦", desc: "장비 or 파편 획득 (5% 전설!)", aliases: ["상자", "보물상자"] },
-  "딸쫀쿠": { price: 5000, icon: "🍬", desc: "포켓몬 [레벨 +1] 상승 (이상한사탕)", aliases: ["딸기", "딸기쿠키"] },
+  "딸쫀쿠": { price: 500, icon: "🍬", desc: "포켓몬 [레벨 +1] 상승 (이상한사탕)", aliases: ["딸기", "딸기쿠키"] },
   "황금열매": { price: 25000, icon: "🏆", desc: "잠재력 MAX & S등급 확정", aliases: ["열매", "라즈열매"] },
   "황금페인트": { price: 35000, icon: "🎨", desc: "일반 포켓몬을 [✨이로치]로 변환", aliases: ["페인트", "이로치"] }
 };
@@ -6881,7 +6881,7 @@ if (msg.indexOf("/사용") === 0) {
     }
 
     u.items["장비상자"] -= qty;
-    var resultLog = ""; var getItems = {}; var fragmentCount = 0;
+    var resultLogBox = ""; var getItems = {}; var fragmentCount = 0;
     var t1 = [], t2 = [], t3 = [], t4 = [];
     for (var k in EQUIP_DB) {
       var item = EQUIP_DB[k]; var tier = item.tier || 1;
@@ -6897,14 +6897,14 @@ if (msg.indexOf("/사용") === 0) {
       else if (roll < (BOX_PROB_TIER_4 + BOX_PROB_TIER_3 + BOX_PROB_TIER_2 + BOX_PROB_TIER_1)) { picked = t1[Math.floor(Math.random() * t1.length)]; grade = "⚪"; }
       else { fragmentCount++; continue; }
       getItems[picked] = (getItems[picked] || 0) + 1;
-      resultLog += grade + " " + picked + "\n";
+      resultLogBox += grade + " " + picked + "\n";
     }
 
     for (var key in getItems) { u.items[key] = (u.items[key] || 0) + getItems[key]; }
     var autoBox = 0;
     if (fragmentCount > 0) {
       u.items["상자파편"] = (u.items["상자파편"] || 0) + fragmentCount;
-      resultLog += "🧩 상자파편 +" + fragmentCount + "개\n";
+      resultLogBox += "🧩 상자파편 +" + fragmentCount + "개\n";
       if (u.items["상자파편"] >= 10) {
         autoBox = Math.floor(u.items["상자파편"] / 10);
         u.items["상자파편"] %= 10;
@@ -6912,13 +6912,13 @@ if (msg.indexOf("/사용") === 0) {
       }
     }
     commitSave(true);
-    var summary = "🎁 상자 " + qty + "개를 개봉했습니다!\n━━━━━━━━━━━━━━\n" + (resultLog || "🧩 파편만 잔뜩 나왔습니다...\n");
+    var summary = "🎁 상자 " + qty + "개를 개봉했습니다!\n━━━━━━━━━━━━━━\n" + (resultLogBox || "🧩 파편만 잔뜩 나왔습니다...\n");
     if (autoBox > 0) summary += "\n♻️ 파편 10개를 모아 [장비상자 +" + autoBox + "]개를 합성했습니다!";
     replier.reply(summary);
     return;
   }
 
-  // 2. 탐사스프레이
+// 2. 탐사스프레이
   if (itemCmd === "스프레이" || itemCmd === "탐사스프레이") {
     if (!u.items || !u.items["탐사스프레이"] || u.items["탐사스프레이"] < 1) {
       replier.reply("💨 '탐사스프레이'가 없습니다."); return;
@@ -6927,7 +6927,15 @@ if (msg.indexOf("/사용") === 0) {
     u.sprayEndTime = Math.max(now, (u.sprayEndTime || 0)) + (30 * 60 * 1000);
     u.items["탐사스프레이"]--;
     commitSave(true);
-    replier.reply("💨 칙-! 탐사스프레이를 뿌렸습니다.\n━━━━━━━━━━━━━━\n⏳ 효과: 30분간 필드 탐색 쿨타임이 50% 단축됩니다.\n🏃 현재 쿨타임: [5초] (적용 중!)");
+    
+    // 글로벌 쿨타임 변수를 기준으로 반토막 계산 (안전장치 포함)
+    var baseCd = (typeof FIELD_COOLDOWN_MS !== "undefined" ? FIELD_COOLDOWN_MS : 5000) / 1000;
+    var sprayCd = baseCd / 2;
+
+    replier.reply("💨 칙-! " + sender + "님이 탐사스프레이를 뿌렸습니다.\n" +
+                  "━━━━━━━━━━━━━━\n" +
+                  "⏳ 효과: 30분간 필드 탐색 쿨타임이 50% 단축됩니다.\n" +
+                  "🏃 탐색 쿨타임: [" + baseCd + "초 ➔ " + sprayCd + "초] (적용 중!)");
     return;
   }
 
@@ -6969,6 +6977,7 @@ if (msg.indexOf("/사용") === 0) {
   var itemKey = "";
   if (["두쫀쿠", "쿠키"].indexOf(itemCmd) !== -1) itemKey = "두쫀쿠";
   else if (["딸기쿠키", "딸기", "딸쫀쿠"].indexOf(itemCmd) !== -1) itemKey = "딸기쿠키";
+  else if (["포켓몬푸딩", "푸딩"].indexOf(itemCmd) !== -1) itemKey = "포켓몬푸딩";
   else if (["황금열매", "열매", "라즈열매"].indexOf(itemCmd) !== -1) itemKey = "황금열매";
   else if (["도파민", "강화권"].indexOf(itemCmd) !== -1) itemKey = "도파민강화권";
   else if (["티어리셋", "리셋"].indexOf(itemCmd) !== -1) itemKey = "티어리셋권";
@@ -6987,13 +6996,16 @@ if (msg.indexOf("/사용") === 0) {
   var pName = getDisplayName(p);
   var resultLog = "";
 
-  // 아이템 효과 적용 (에러 완벽 차단 로직)
+  // 아이템 효과 적용 (에러 완벽 차단 및 과몰입 연출 강화)
   if (itemKey === "두쫀쿠") {
     var oldEnh = p.enh || 0;
     p.enh = oldEnh + amount;
     u.cookie -= amount;
     if (typeof tryAutoEvolveByEnh === "function") tryAutoEvolveByEnh(p);
-    resultLog = "💪 강화 수치: +" + oldEnh + " ➔ +" + p.enh + "\n(100% 확정 강화 성공!)";
+    resultLog = "💪 [확정 강화 성공!]\n" + 
+                sender + "님의 " + pName + "이(가) 두쫀쿠를 씹어먹고 힘을 기릅니다!\n" +
+                "➔ 강화 수치: +" + oldEnh + "강 ➔ +" + p.enh + "강";
+
   } else if (itemKey === "딸기쿠키") {
     var oldLv = p.lv || 1;
     var maxLv = 100;
@@ -7001,13 +7013,28 @@ if (msg.indexOf("/사용") === 0) {
     if (upLv <= 0) { replier.reply("🚫 이미 최대 레벨(" + maxLv + ")에 도달했습니다."); return; }
     p.lv = oldLv + upLv;
     u.items[itemKey] -= amount;
-    resultLog = "🆙 레벨: Lv." + oldLv + " ➔ Lv." + p.lv + "\n(폭풍 성장!)";
+    resultLog = "🆙 [폭풍 성장!]\n" + 
+                "냠냠! 달콤한 딸기맛 쿠키에 " + pName + "이(가) 쑥쑥 자라납니다!\n" +
+                "➔ 레벨: Lv." + oldLv + " ➔ Lv." + p.lv;
+
+  } else if (itemKey === "포켓몬푸딩") {
+    var oldFrPudding = p.friendship || 0;
+    var realQty = Math.min(amount, Math.ceil((255 - oldFrPudding) / 20));
+    u.items[itemKey] -= realQty;
+    p.friendship = Math.min(255, oldFrPudding + (20 * realQty));
+    resultLog = "🍮 [유대감 상승!]\n" + 
+                "냠냠! 달콤한 푸딩 " + realQty + "개를 먹고 " + pName + "이(가) 행복해합니다!\n" +
+                "➔ 친밀도: " + oldFrPudding + "p ➔ " + p.friendship + "p";
+
   } else if (itemKey === "황금열매") {
     var oldFr = p.friendship || 0;
     var upFr = amount * 10;
     p.friendship = Math.min(255, oldFr + upFr);
     u.items[itemKey] -= amount;
-    resultLog = "❤️ 친밀도: " + oldFr + " ➔ " + p.friendship + "\n(포켓몬이 트레이너를 더욱 따릅니다!)";
+    resultLog = "❤️ [유대감 대폭 상승!]\n" + 
+                pName + "이(가) 전설의 열매를 먹고 " + sender + "님을 더욱 따릅니다!\n" +
+                "➔ 친밀도: " + oldFr + "p ➔ " + p.friendship + "p";
+
   } else if (itemKey === "도파민강화권") {
     var oldEnhDopa = p.enh || 0;
     var successCount = 0;
@@ -7015,17 +7042,26 @@ if (msg.indexOf("/사용") === 0) {
     p.enh = oldEnhDopa + successCount;
     u.dopaTicket -= amount;
     if (typeof tryAutoEvolveByEnh === "function") tryAutoEvolveByEnh(p);
-    resultLog = "🎰 총 " + amount + "회 시도 ➔ " + successCount + "회 성공!\n(현재 +" + p.enh + "강)";
- } else if (itemKey === "티어리셋권") {
+    
+    var hypeMsg = "";
+    if (successCount === amount && amount > 1) hypeMsg = "🤩 미쳤다!! 100% 올패스 잭팟!! 🎉";
+    else if (successCount > 0) hypeMsg = "🔥 캬~ 도파민 싹 도노!! (" + successCount + "번 성공)";
+    else hypeMsg = "💦 아악! 멘탈 바사삭... 전부 실패했습니다 😭";
+
+    resultLog = "🎰 [" + sender + "님의 강화 도박!]\n" +
+                "숨 막히는 긴장감 속, " + pName + "의 몸이 빛납니다...!\n" +
+                "➔ 30% 확률로 " + amount + "번 시도 ➔ 【 " + successCount + "회 성공 】\n" +
+                "➔ 수치 변화: +" + oldEnhDopa + "강 ➔ +" + p.enh + "강\n" +
+                "💬 " + hypeMsg;
+
+  } else if (itemKey === "티어리셋권") {
     if (amount > 1) { replier.reply("🚫 티어리셋권은 한 번에 1개씩만 사용 가능합니다."); return; }
     
-    // 1. 기존 스탯 기억하기
     var oldGrade = p.grade || "D";
     var oldStr = p.ivStr || 0; 
     var oldHp = Math.floor((p.ivHp || 0) / 10); 
     var oldSpd = p.ivSpd || 0;
 
-    // 2. 새로운 등급 및 잠재력(IV) 부여 (핵심 수정)
     p.grade = typeof generatePokemonGrade === "function" ? generatePokemonGrade() : ["D", "C", "B", "A", "S"][Math.floor(Math.random() * 5)];
     
     if (typeof generateIVsByGrade === "function") {
@@ -7034,7 +7070,6 @@ if (msg.indexOf("/사용") === 0) {
         p.ivHp = newIVs.hp; 
         p.ivSpd = newIVs.spd;
     } else {
-        // 안전장치: 함수가 없을 경우 수동으로 등급별 기본 스탯 부여
         var baseIv = {"S":14, "A":11, "B":8, "C":4, "D":1}[p.grade] || 1;
         p.ivStr = baseIv + Math.floor(Math.random() * 2);
         p.ivSpd = baseIv + Math.floor(Math.random() * 2);
@@ -7044,11 +7079,12 @@ if (msg.indexOf("/사용") === 0) {
     u.reroll -= 1;
     if (typeof dexCaught === "function") dexCaught(u, p.pid, p.grade); // 도감 최고등급 갱신
     
-    // 3. 화살표 연출 및 결과 조립
     var gradeLevels = {"D":1, "C":2, "B":3, "A":4, "S":5};
     var arrow = (gradeLevels[p.grade] > gradeLevels[oldGrade]) ? "📈(상승!)" : (gradeLevels[p.grade] < gradeLevels[oldGrade] ? "📉(하락..)" : "➖(유지)");
 
-    resultLog = "🌀 잠재력 티어: [" + oldGrade + "] " + arrow + " 【 " + p.grade + " 】\n\n" +
+    resultLog = "🌀 [잠재력 재각성!]\n" + 
+                "강렬한 빛이 " + sender + "님의 " + pName + "을(를) 감쌉니다!\n" +
+                "➔ 잠재력 티어: [" + oldGrade + "] " + arrow + " 【 " + p.grade + " 】\n\n" +
                 "[잠재력 변화 (15점 만점)]\n" +
                 "💪 힘 : " + oldStr + " ➔ " + p.ivStr + "\n" +
                 "❤️ 체 : " + oldHp + " ➔ " + Math.floor(p.ivHp / 10) + "\n" +
@@ -7060,7 +7096,9 @@ if (msg.indexOf("/사용") === 0) {
     if (p.shiny) { replier.reply("🚫 이미 색이 다른 포켓몬입니다!"); return; }
     p.shiny = true;
     u.items[itemKey] -= 1;
-    resultLog = "✨ 앗! 포켓몬에게 영롱한 빛이 감돌기 시작합니다!\n(이로치 확정 부여)";
+    resultLog = "✨ [영롱한 변신!]\n" + 
+                "쓱싹쓱싹... 앗! " + sender + "님의 " + pName + "에게 영롱한 빛이 감돌기 시작합니다!\n" +
+                "➔ (이로치 포켓몬으로 확정 변신 완료)";
     
   } else {
     replier.reply("🚫 사용 가능한 소비 아이템이 아니거나 등록되지 않았습니다.");
@@ -7068,7 +7106,12 @@ if (msg.indexOf("/사용") === 0) {
   }
 
   commitSave(true);
-  replier.reply("🎁 [" + itemKey + "] 사용 완료!\n━━━━━━━━━━━━━━\n대상: " + pName + "\n소모: " + amount + "개\n\n💡 [효과 적용]\n" + resultLog);
+  
+  // 최종 결과 출력 포맷
+  replier.reply("🎁 " + sender + "님, [" + itemKey + "] 사용 완료!\n" + 
+                "━━━━━━━━━━━━━━\n" +
+                "💡 [효과 적용]\n" + 
+                resultLog);
   return;
 }
 
@@ -7504,7 +7547,7 @@ var GUIDE_MAP = {
 
   "레이드": "🦖 [월드 레이드 2.0]\n- `/레이드` 시 공격 30회마다 **[필살기]** 발동!\n- 보상: 데미지 비례 **다코타 코인** 지급\n- 부상: 공격 시 5% 확률로 부상 (2분 대기 또는 `/치료`)",
 
-  "다코타": "🏰 [다코타 상점]\n- 레이드 코인 전용 상점입니다. (`/다코타상점`)\n- **꿀템**: S급 확정권(황금열매), 강화+3(딸쫀쿠), 이로치변환(황금페인트)\n- **획득**: 레이드 보상 또는 `/탐험` 중 낮은 확률로 발견 가능!",
+  "다코타": "🏰 [다코타 상점]\n- 레이드 코인 전용 상점입니다. (`/다코타상점`)\n- **꿀템**: S급 확정권(황금열매), 레벨+1(딸쫀쿠), 이로치변환(황금페인트)\n- **획득**: 레이드 보상 또는 `/탐험` 중 낮은 확률로 발견 가능!",
 
   "잠재력": "📊 [등급 & 잠재력(IV)]\n- **등급**: S(👑) > A > B > C > D\n- **스탯**: 힘 / 체력 / 민첩 (각 15점 만점)\n- 등급이 높을수록 배틀 시 공격력과 체력 보너스가 크게 상승합니다.",
 
@@ -7874,7 +7917,7 @@ if (msg.indexOf("/구매") === 0) {
     return;
   }
 
-  if (msg === "/필드") {
+if (msg === "/필드") {
     var currentWild = getWild(d, sender);
     if (currentWild) {
       var dbOld = findPokemonDB(currentWild.pid);
@@ -7883,9 +7926,17 @@ if (msg.indexOf("/구매") === 0) {
     }
 
     var now = new Date().getTime();
-    if (now - u.lastFieldAt < FIELD_COOLDOWN_MS) {
-      var sec = Math.ceil((FIELD_COOLDOWN_MS - (now - u.lastFieldAt)) / 1000);
-      replier.reply(decoName + "님, " + sec + "초 후 다시 탐색 가능합니다.");
+
+    // ★ [핵심 추가] 스프레이 버프가 켜져 있는지 확인하고 실제 쿨타임 반토막 내기
+    var isSprayActive = (u.sprayEndTime && now < u.sprayEndTime);
+    var actualCooldown = isSprayActive ? (FIELD_COOLDOWN_MS / 2) : FIELD_COOLDOWN_MS;
+
+    // 적용된 실제 쿨타임(actualCooldown)으로 시간 계산
+    if (now - u.lastFieldAt < actualCooldown) {
+      // 남은 시간 계산 (스프레이 적용 중이면 소수점도 나올 수 있으니 올림 처리)
+      var sec = Math.ceil((actualCooldown - (now - u.lastFieldAt)) / 1000);
+      var buffMsg = isSprayActive ? " (💨스프레이 효과)" : "";
+      replier.reply(decoName + "님, " + sec + "초 후 다시 탐색 가능합니다." + buffMsg);
       return;
     }
     u.lastFieldAt = now;
@@ -7967,7 +8018,6 @@ if (msg.indexOf("/구매") === 0) {
     replier.reply(output);
     return;
   }
-
 
 
   // -------------------- [최종] /도망(/ㅌㅌ) 명령어 --------------------
