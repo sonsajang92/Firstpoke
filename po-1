@@ -7016,20 +7016,52 @@ if (msg.indexOf("/사용") === 0) {
     u.dopaTicket -= amount;
     if (typeof tryAutoEvolveByEnh === "function") tryAutoEvolveByEnh(p);
     resultLog = "🎰 총 " + amount + "회 시도 ➔ " + successCount + "회 성공!\n(현재 +" + p.enh + "강)";
-  } else if (itemKey === "티어리셋권") {
+ } else if (itemKey === "티어리셋권") {
     if (amount > 1) { replier.reply("🚫 티어리셋권은 한 번에 1개씩만 사용 가능합니다."); return; }
+    
+    // 1. 기존 스탯 기억하기
     var oldGrade = p.grade || "D";
-    var grades = ["D", "C", "B", "A", "S"];
-    var newGrade = grades[Math.floor(Math.random() * grades.length)];
-    p.grade = newGrade;
+    var oldStr = p.ivStr || 0; 
+    var oldHp = Math.floor((p.ivHp || 0) / 10); 
+    var oldSpd = p.ivSpd || 0;
+
+    // 2. 새로운 등급 및 잠재력(IV) 부여 (핵심 수정)
+    p.grade = typeof generatePokemonGrade === "function" ? generatePokemonGrade() : ["D", "C", "B", "A", "S"][Math.floor(Math.random() * 5)];
+    
+    if (typeof generateIVsByGrade === "function") {
+        var newIVs = generateIVsByGrade(p.grade);
+        p.ivStr = newIVs.str; 
+        p.ivHp = newIVs.hp; 
+        p.ivSpd = newIVs.spd;
+    } else {
+        // 안전장치: 함수가 없을 경우 수동으로 등급별 기본 스탯 부여
+        var baseIv = {"S":14, "A":11, "B":8, "C":4, "D":1}[p.grade] || 1;
+        p.ivStr = baseIv + Math.floor(Math.random() * 2);
+        p.ivSpd = baseIv + Math.floor(Math.random() * 2);
+        p.ivHp = (baseIv + Math.floor(Math.random() * 2)) * 10;
+    }
+
     u.reroll -= 1;
-    resultLog = "🌀 잠재력 티어: [" + oldGrade + "] ➔ [" + newGrade + "]";
+    if (typeof dexCaught === "function") dexCaught(u, p.pid, p.grade); // 도감 최고등급 갱신
+    
+    // 3. 화살표 연출 및 결과 조립
+    var gradeLevels = {"D":1, "C":2, "B":3, "A":4, "S":5};
+    var arrow = (gradeLevels[p.grade] > gradeLevels[oldGrade]) ? "📈(상승!)" : (gradeLevels[p.grade] < gradeLevels[oldGrade] ? "📉(하락..)" : "➖(유지)");
+
+    resultLog = "🌀 잠재력 티어: [" + oldGrade + "] " + arrow + " 【 " + p.grade + " 】\n\n" +
+                "[잠재력 변화 (15점 만점)]\n" +
+                "💪 힘 : " + oldStr + " ➔ " + p.ivStr + "\n" +
+                "❤️ 체 : " + oldHp + " ➔ " + Math.floor(p.ivHp / 10) + "\n" +
+                "⚡ 민 : " + oldSpd + " ➔ " + p.ivSpd + "\n" +
+                "💡 등급에 맞춰 세부 스탯이 정상 재조정되었습니다!";
+                
   } else if (itemKey === "황금페인트") {
     if (amount > 1) { replier.reply("🚫 황금페인트는 한 번에 1개씩만 사용 가능합니다."); return; }
     if (p.shiny) { replier.reply("🚫 이미 색이 다른 포켓몬입니다!"); return; }
     p.shiny = true;
     u.items[itemKey] -= 1;
     resultLog = "✨ 앗! 포켓몬에게 영롱한 빛이 감돌기 시작합니다!\n(이로치 확정 부여)";
+    
   } else {
     replier.reply("🚫 사용 가능한 소비 아이템이 아니거나 등록되지 않았습니다.");
     return;
@@ -7039,7 +7071,6 @@ if (msg.indexOf("/사용") === 0) {
   replier.reply("🎁 [" + itemKey + "] 사용 완료!\n━━━━━━━━━━━━━━\n대상: " + pName + "\n소모: " + amount + "개\n\n💡 [효과 적용]\n" + resultLog);
   return;
 }
-
 
     if (msg.indexOf("/분해") === 0 || msg.indexOf("/갈갈") === 0) {
       var parts = msg.split(" ").filter(Boolean);
