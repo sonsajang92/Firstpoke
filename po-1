@@ -30,16 +30,7 @@ function fmtNum(n) {
     n = 0;
   return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
-// null/undefined 대비용 (숫자 아닌 값도 그냥 문자열로)
-function fmtAny(v) {
-  if (v === null || v === undefined) 
-    return "";
-  if (typeof v === "number") 
-    return fmtNum(v);
-  if (typeof v === "string" && /^-?\d+$/.test(v)) 
-    return fmtNum(v);
-  return String(v);
-}
+ 
 // -------------------- 저장 파일 경로 --------------------
 var DATA_PATH = "/sdcard/mbot_pokemon_db.json";
 // -------------------- 밸런스(표준) --------------------
@@ -2438,13 +2429,6 @@ function ensurePokemonGrades(u) {
   }
   return isChanged;
 }
-// [신규] 포켓몬 ID로 어울리는 지역 찾기
-function getRecommendedRegion(pid) {
-  var db = findPokemonDB(pid);
-  if (!db) 
-    return REGIONS[0].key;
-  var t1 = db.type1;
-  var t2 = db.type2;
   // 지역별 타입 매칭 확인
   for (var i = 0; i < REGIONS.length; i++) {
     var r = REGIONS[i];
@@ -2468,9 +2452,6 @@ function findUserPokemonByUid(u, uid) {
 }
 function randomPick(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
-}
-function say(userName, text) {
-  return userName + "님, " + text;
 }
 function sayDo(userName, text) {
   return userName + "님이 " + text;
@@ -2620,22 +2601,7 @@ function typeEffectText(mult) {
     return "효과가 별로인 듯하다…";
   return "";
 }
-function funnyHitText() {
-  var arr = ["정신이 잠깐 나갔다!", "화면 밖으로 날아갈 뻔했다!", "옆에서 구경하던 사람도 놀랐다!", "내가 방금 뭘 본 거지…?", "이건 좀 과했다!", "상대가 잠깐 멈췄다…(렉 아님)"];
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-function funnyDodgeText() {
-  var arr = ["회피했다! 슬쩍 비켜갔다!", "회피했다! 미끄러지듯 피했다!", "회피했다! ‘안 맞쥬?’", "회피했다! 이걸 피하네…?", "회피했다! 발밑이 가벼웠다!"];
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-function funnyGuardText() {
-  var arr = ["방어 태세! 데미지가 줄었다!", "가드 성공! 단단하게 버텼다!", "막아냈다! 거의 안 들어갔다!", "방어! 상대가 당황했다!"];
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-function crisisText(name) {
-  var arr = [name + " 위기! 숨이 턱까지 찼다!", name + " 위기! 눈앞이 하얘졌다!", name + " 위기! 손에 땀이 난다!", name + " 위기! ‘여기서 지면 안 돼!’"];
-  return arr[Math.floor(Math.random() * arr.length)];
-}
+
 // [밸런스 패치] 체력 계산 (희귀도 뻥튀기 완화)
 function calcHP(db, enh, ivHp, equipName) {
   var s = getStageFromBase(db.id);
@@ -3374,11 +3340,6 @@ function isPokemonBusy(u, uid) {
     return true;
   return false;
 }
-function getExploringPokemon(u) {
-  if (!u.exploration) 
-    return null;
-  return findUserPokemonByUid(u, u.exploration.uid);
-}
 // 🧭 [함수] 탐험 상태 및 루트 생성기 (다이나믹 버전)
 function getExploreProgress(u, p) {
   var now = new Date().getTime();
@@ -3433,12 +3394,6 @@ var BATTLE_COMMENT_DRAW = ["팽팽했다… 진짜 팽팽!", "둘 다 한 끗 �
 var STREAK_RESET_DRAW_LINES = ["무승부라 연승은 여기서 잠깐 멈췄어요.", "승부가 안 났으니 연승은 리셋!", "무승부! 연승 기록은 잠시 보류!", "팽팽했지만… 연승은 초기화!"];
 function blockTitle(t) {
   return "【" + t + "】\n";
-}
-function joinLines(arr) {
-  var out = "";
-  for (var i = 0; i < arr.length; i++) 
-    out += arr[i] + "\n";
-  return out;
 }
 var EMPHASIS_RARE5 = ["✨ 희귀한 기운이 느껴집니다…", "✨ 공기가 달라졌어요… 뭔가 온다!", "✨ 등골이 서늘해졌습니다…", "✨ 이건… 진짜다."];
 var EMPHASIS_LEGENDARY = ["🔥 전설급 포켓몬 출현!", "🔥 분위기 무엇… 전설 각인데요?", "🔥 이건 잡아야 합니다. 무조건.", "🔥 심장이 뛴다… 전설이다!"];
@@ -3709,19 +3664,7 @@ function sellPrice(pid, enh, grade) {
     price = cap;
   return price;
 }
-function rarityCatchMod(rarity) {
-  // 희귀도별 포획 난이도 계수 (낮을수록 어려움)
-  // 체감 차이 크게 설계
-  if (rarity <= 1) 
-    return 1.40;
-  if (rarity === 2) 
-    return 1.15;
-  if (rarity === 3) 
-    return 0.85;
-  if (rarity === 4) 
-    return 0.55;
-  return 0.32;
-}
+
 function trainerCatchBonus(lv) {
   lv = Math.max(1, Math.min(99, lv || 1));
   // 1레벨 0% → 50레벨 약 +18% → 99레벨 +30%
@@ -3959,45 +3902,6 @@ function spawnPokemonForRegion(regionKey, worldName) {
   }
   return filtered[filtered.length - 1];
 }
-// [기존 함수들 근처에 붙여넣기]
-function processBattleVictory(u, enemyDb, replier) {
-  // 1. 배틀 보상 수식
-  var baseExp = randInt(2000, 4500); 
-  var baseGold = randInt(3000, 6000);
-  
-  var lvMult = 1 + (u.trainerLv * 0.03);
-  var finalExp = Math.floor(baseExp * lvMult);
-  var finalGold = Math.floor(baseGold * lvMult);
-
-  u.gold += finalGold;
-  
-  var growMsg = "";
-  // 2. 파티 전원 경험치 배분
-  if (u.party && u.party.length > 0) {
-    for (var i = 0; i < u.party.length; i++) {
-      var pMember = findUserPokemonByUid(u, u.party[i]);
-      if (pMember) {
-        var lvNotice = gainPokemonExp(u, pMember, finalExp);
-        if (lvNotice) growMsg += "\n" + lvNotice;
-      }
-    }
-  }
-
-  // 3. 트레이너 경험치
-  var userLvMsg = addExpWithLevelUpMsg(u, Math.floor(finalExp * 0.5));
-
-  var battleResult = "⚔️ [BATTLE VICTORY]\n" +
-                     "━━━━━━━━━━━━━━\n" +
-                     "🏆 승리 보상 획득!\n" +
-                     "💰 골드: +" + fmtNum(finalGold) + "G\n" +
-                     "✨ 경험치: +" + fmtNum(finalExp) + " EXP (파티 전원)\n" +
-                     growMsg + "\n" + (userLvMsg || "");
-                     
-  replier.reply(battleResult);
-  commitSave(true);
-}
-
-
 // -------------------- [개인별 세션 적용] 야생 스폰 유틸리티 --------------------
 function getWild(d, user) {
   if (!d.lastSpawnByRoom) d.lastSpawnByRoom = {};
@@ -4034,25 +3938,6 @@ function takeExpiredWild(d, user) {
 
 
 // -------------------- 볼/포획 확률 --------------------
-function ballCatchRate(ballType) {
-  if (ballType === 0) 
-    return 0.75;
-  if (ballType === 1) 
-    return 1.15;
-  return 1.45;
-}
-// 희귀도에 따른 포획 패널티
-function rarityCatchPenalty(r) {
-  if (r <= 1) 
-    return 1.0;
-  if (r === 2) 
-    return 0.9;
-  if (r === 3) 
-    return 0.75;
-  if (r === 4) 
-    return 0.6;
-  return 0.45;
-}
 function consumeBall(u, ballType) {
   if (ballType === 0) {
     if (u.ball <= 0) 
@@ -4109,45 +3994,7 @@ function rarityCatchMul(r) {
     return 0.40;
   return 0.18;
 }
-// 도파민강화권
-function rollDopaEnhance() {
-  var r = Math.random();
-  // UP 35% / KEEP 25% / RESET0 30% / EXIT 10%
-  if (r < 0.35) {
-    // 성공 시 2~10강 분포
-    var x = Math.random();
-    var up = 2;
-    if (x < 0.25) 
-      up = 2;
-    else if (x < 0.45) 
-      up = 3;
-    else if (x < 0.60) 
-      up = 4;
-    else if (x < 0.72) 
-      up = 5;
-    else if (x < 0.82) 
-      up = 6;
-    else if (x < 0.90) 
-      up = 7;
-    else if (x < 0.95) 
-      up = 8;
-    else if (x < 0.98) 
-      up = 9;
-    else 
-      up = 10;
-    return {
-  kind: "UP", 
-  up: up};
-  }
-  if (r < 0.60) 
-    return {
-  kind: "KEEP"};
-  if (r < 0.90) 
-    return {
-  kind: "RESET0"};
-  return {
-  kind: "EXIT"};
-}
+
 // 🏪 [함수] 일반 상점 텍스트 생성
 function getGeneralShopText(u, decoName) {
   var summary = "🏪 " + decoName + "님, 일반 상점에 오신 것을 환영합니다!\n" +
@@ -4750,22 +4597,7 @@ function ensureConfig(d) {
   if (typeof d.config.flags.DOPA_ON !== "boolean") 
     d.config.flags.DOPA_ON = true;
 }
-function getShopPrice(d, key) {
-  ensureConfig(d);
-  return d.config.shop[key];
-}
-function setShopPrice(d, key, val) {
-  ensureConfig(d);
-  d.config.shop[key] = val;
-}
-function isFlagOn(d, key) {
-  ensureConfig(d);
-  return !!d.config.flags[key];
-}
-function setFlag(d, key, on) {
-  ensureConfig(d);
-  d.config.flags[key] = !!on;
-}
+
 function globalConfigText(d) {
   ensureConfig(d);
   return ("전역 설정\n\n" + "상점\n" + "몬스터볼: " + d.config.shop.BALL + "💰\n" + "슈퍼볼: " + d.config.shop.SUPER + "💰\n" + "하이퍼볼: " + d.config.shop.ULTRA + "💰\n" + "도파민강화권: " + d.config.shop.DOPA + "💰\n\n" + "토글\n" + "이벤트: " + (d.config.flags.EVENT_ON ? "ON" : "OFF") + "\n" + "필드: " + (d.config.flags.FIELD_ON ? "ON" : "OFF") + "\n" + "강화: " + (d.config.flags.ENHANCE_ON ? "ON" : "OFF") + "\n" + "도파민강화: " + (d.config.flags.DOPA_ON ? "ON" : "OFF"));
@@ -4829,13 +4661,6 @@ function getEligibleOpponentsMem(d, room, myName, targetEnh) {
       list.push(name);
   }
   return list;
-}
-// 래퍼(기존 호출부 호환)
-function trackRoomActive(d, room, sender) {
-  trackRoomActiveMem(room, sender);
-}
-function getEligibleOpponents(d, room, myName) {
-  return getEligibleOpponentsMem(d, room, myName);
 }
 // -------------------- 타입 상성 계산 --------------------
 function remapTypeMult(m) {
@@ -4922,16 +4747,7 @@ function buildPreMap() {
 // ★ 이 변수가 족보의 핵심입니다!
 var PRE_MAP = buildPreMap();
 // 2. 조상님(기본형) 찾기 - "내 뿌리는 어디인가?"
-function getBaseId(pid) {
-  var cur = pid;
-  var safety = 0;
-  // 부모가 없을 때까지 거슬러 올라감
-  while (PRE_MAP[cur] && safety < 10) {
-    cur = PRE_MAP[cur];
-    safety++;
-  }
-  return cur;
-}
+
 // 3. 진화 단계 확인 (0:기본, 1:1차, 2:2차) - 스탯 계산용
 function getStageFromBase(pid) {
   var depth = 0;
@@ -4943,10 +4759,6 @@ function getStageFromBase(pid) {
     safety++;
   }
   return depth;
-}
-// 4. (구형 호환) 체인 깊이 계산 - 이제 안 쓰지만 에러 방지용으로 남김
-function chainDepthFromBase(baseId) {
-  return 0;
 }
 // 5. 진화 실행 함수 (이름 변경 알림)
 function evolveTo(p, newPid) {
@@ -5135,14 +4947,7 @@ function generateIVsByGrade(grade) {
 function randInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
-function getRarity(pid) {
-  // 우선 DB에 rarity가 있으면 그걸 쓰는 걸 추천
-  // 여기서는 findPokemonDB(pid).rarity 를 가정
-  var db = findPokemonDB(pid);
-  if (db && db.rarity != null) 
-    return db.rarity;
-  return 1;
-}
+
 function isLegendary(pid) {
   // DB에 legendary 플래그가 있으면 그걸 사용 추천
   // 여기서는 db.legendary 또는 rarity==5 로 처리
@@ -5169,49 +4974,8 @@ var CATCH_REWARD_BASE = {
   5: {
   gold: 400, 
   exp: 110}};
-// 레벨/난수/희귀도까지 반영해서 최종 보상 산출
-function calcCatchRewards(u, pid) {
-  var db = findPokemonDB(pid) || {};
-  var rarity = (db.rarity != null) ? db.rarity : 1;
-  rarity = clamp(rarity, 1, 5);
-  var base = CATCH_REWARD_BASE[rarity] || CATCH_REWARD_BASE[1];
-  // 레벨 보정: 레벨이 높을수록 소폭 증가 (너무 폭증하지 않게)
-  var lv = (u && typeof u.trainerLv === "number") ? u.trainerLv : 1;
-  // 난수 보정: 희귀도가 높을수록 폭이 커짐
-  // 예: 흔함 ±20%, 전설 ±35%
-  var jitterPct = [0, 20, 22, 26, 30, 35][rarity];  // 인덱스 맞춤
-  var goldJ = randInt(-jitterPct, jitterPct) / 100;
-  var expJ = randInt(-jitterPct, jitterPct) / 100;
-  // 레벨 계수: 1 + (레벨 / 100) 정도로 완만하게
-  var lvMul = 1 + (lv / 100);
-  var gold = Math.floor(base.gold * lvMul * (1 + goldJ));
-  var exp = Math.floor(base.exp * lvMul * (1 + expJ));
-  // 최소값 보정
-  gold = Math.max(1, gold);
-  exp = Math.max(1, exp);
-  // 전설 특수 보너스(추가 보상): 큰 한방 + 연출용
-  var legendary = isLegendary(pid);
-  var bonusGold = 0;
-  var bonusExp = 0;
-  if (legendary) {
-    bonusGold = randInt(180, 360) + Math.floor(lv * 1.2);
-    bonusExp = randInt(120, 240) + Math.floor(lv * 0.9);
-  }
-  return {
-  rarity: rarity, 
-  legendary: legendary, 
-  gold: gold, 
-  exp: exp, 
-  bonusGold: bonusGold, 
-  bonusExp: bonusExp, 
-  totalGold: gold + bonusGold, 
-  totalExp: exp + bonusExp};
-}
-// 전설 연출 문구
-function legendaryCatchFX(sender, name, r) {
-  // r: calcCatchRewards 결과
-  return (blockTitle("전설 포획") + "✨ " + sayDo(sender, "전설급 " + name + "을(를) 포획했어요!") + "\n\n" + "🎆 특수 보상 발생!\n" + "추가 보상: +" + r.bonusGold + "💰 / +" + r.bonusExp + "EXP\n\n");
-}
+
+
 function getMaxCatchAttempts(pid) {
   var db = findPokemonDB(pid);
   var r = db ? (db.rarity || 2) : 2;
@@ -5311,47 +5075,7 @@ function commitSave(force) {
   markDirty();
   flushSaveIfNeeded(!!force);
 }
-function debugBattle(d, sender, room, replier) {
-  var now = Date.now();
-  var roomActive = ROOM_ACTIVE_MEM[room] || {};
-  var activeUsers = [];
-  var existUsers = [];
-  var pokemonUsers = [];
-  var candidates = [];
-  for (var name in roomActive) {
-    var last = roomActive[name];
-    if (now - last <= ACTIVE_TTL_MS) {
-      activeUsers.push(name);
-      if (d.users && d.users[name]) {
-        existUsers.push(name);
-        var pokes = d.users[name].pokemons;
-        if (pokes && Object.keys(pokes).length > 0) {
-          pokemonUsers.push(name);
-          if (name !== sender) 
-            candidates.push(name);
-        }
-      }
-    }
-  }
-  var msgLines = [];
-  msgLines.push("배틀 디버그");
-  msgLines.push("방: " + room);
-  msgLines.push("나: " + sender);
-  msgLines.push("현재 시간: " + new Date(now).toLocaleString());
-  msgLines.push("");
-  msgLines.push("최근 활동 유저 수: " + activeUsers.length);
-  msgLines.push(activeUsers.join(", ") || "(없음)");
-  msgLines.push("");
-  msgLines.push("유저 데이터 존재: " + existUsers.length);
-  msgLines.push(existUsers.join(", ") || "(없음)");
-  msgLines.push("");
-  msgLines.push("포켓몬 보유 유저: " + pokemonUsers.length);
-  msgLines.push(pokemonUsers.join(", ") || "(없음)");
-  msgLines.push("");
-  msgLines.push("최종 배틀 후보(본인 제외): " + candidates.length);
-  msgLines.push(candidates.join(", ") || "(없음)");
-  replier.reply(msgLines.join("\n"));
-}
+
 // 거래 중복 방지용 락
 var TRANSACTION_LOCK = {};
 // ==================================================================
@@ -8658,45 +8382,117 @@ if (msg === "/필드") {
       replier.reply(r.msg);
       return;
     }
-    if (msg.indexOf("/도파민") === 0) {
-      var parts = msg.split(" ").filter(Boolean);
-      var input = parts[1];
-      if (!input) { replier.reply("📝 사용법: /도파민 [UID 또는 별명]"); return; }
+ // 🎰 [도파민 단독 명령어] 사장님 기획 (대성공 세분화 + 2% 영구삭제)
+if (msg.indexOf("/도파민") === 0 || msg.indexOf("/강화권") === 0) {
+  var parts = msg.split(" ").filter(Boolean);
+  var pInput = parts[1] ? parts[1].replace("#", "") : null;
 
-      var pD = findPokemonByAny(u, input);
-      if (!pD) { replier.reply("🚫 '" + input + "' 포켓몬을 찾을 수 없습니다."); return; }
-      
-      if (isPokemonBusy(u, pD.uid)) { replier.reply("🚫 탐험 중인 포켓몬입니다."); return; }
-      if (pD.enh >= ENHANCE_MAX) { replier.reply("이미 최대 강화 단계입니다."); return; }
-      if (!u.dopaTicket || u.dopaTicket <= 0) { replier.reply("도파민강화권이 없습니다."); return; }
+  if (!pInput) {
+    replier.reply("🎰 [도파민 강화장]\n사용법: /도파민 [별명/UID]\n예: /도파민 피카츄\n\n💡 40% 확률로 대폭발(+2~+10)! 단, 실패 시 2% 확률로 포켓몬이 영구 삭제됩니다...");
+    return;
+  }
 
-      u.dopaTicket--;
-      u.stats.totalDopaUsed = (u.stats.totalDopaUsed || 0) + 1;
-      var before = pD.enh || 0;
-      var pNameD = getDisplayName(pD);
-      var roll = Math.random();
-      var header = "🎰 도파민 강화 시도!\n━━━━━━━━━━━━━━\n";
+  var p = findPokemonByAny(u, pInput);
+  if (!p) { replier.reply("🚫 [" + pInput + "] 포켓몬을 찾을 수 없습니다."); return; }
+  if (isPokemonBusy(u, p.uid)) { replier.reply("🚫 탐험/임무 중인 포켓몬은 강화할 수 없습니다."); return; }
 
-      if (roll < 0.01) { // 파괴
-        var idxD = u.pokemons.indexOf(pD);
-        if (idxD >= 0) u.pokemons.splice(idxD, 1);
-        u.stats.totalDopaDestroy = (u.stats.totalDopaDestroy || 0) + 1;
-        replier.reply(header + "💀 [파괴] 💀\n\n도파민 과부하로 포켓몬이 소멸했습니다!");
-      } else if (roll < 0.41) { // 대성공
-        var upAmount = randInt(2, 10);
-        pD.enh = Math.min(ENHANCE_MAX, before + upAmount);
-        replier.reply(header + "🚀 [대성공] 🚀\n\n" + pNameD + ": " + before + "강 → " + pD.enh + "강!");
-      } else if (roll < 0.71) { // 유지
-        replier.reply(header + "💨 [유지] 💨\n\n" + pNameD + ": " + before + "강 유지!");
-      } else { // 하락
-        var downAmount = randInt(2, 10);
-        pD.enh = Math.max(0, before - downAmount);
-        replier.reply(header + "📉 [하락] 📉\n\n" + pNameD + ": " + before + "강 → " + pD.enh + "강...");
-      }
-      commitSave(true);
-      return;
+  if ((u.dopaTicket || 0) < 1) {
+    replier.reply("💳 도파민강화권이 없습니다. (보유: " + (u.dopaTicket || 0) + "개)\n탐험이나 상점에서 구해오세요!");
+    return;
+  }
+
+  if (p.enh >= 60) {
+    replier.reply("🚫 " + getDisplayName(p) + "은(는) 이미 최대 강화(+60) 상태입니다. 더 이상 주입할 수 없습니다!");
+    return;
+  }
+
+  // 1. 도파민 1장 차감 및 기본 변수 세팅
+  u.dopaTicket -= 1;
+  var oldEnh = p.enh || 0;
+  var pName = getDisplayName(p);
+  var resultMsg = "🎰 [" + sender + "님의 단판 승부!]\n" +
+                  "━━━━━━━━━━━━━━\n" +
+                  "숨 막히는 긴장감... " + pName + "에게 도파민을 꽂아 넣습니다!\n\n";
+
+  // 2. 메인 확률 굴리기 (성공 40% / 실패 60%)
+  var mainRoll = Math.random();
+
+  // 🟢 [성공 구간: 40%]
+  if (mainRoll < 0.40) {
+    var subRoll = Math.random();
+    var upVal = 0;
+    
+    // 1) 초대박 성공 (10%) : +8 ~ +10
+    if (subRoll < 0.10) {
+      upVal = Math.floor(Math.random() * 3) + 8; // 8, 9, 10
+      resultMsg += "🎇 [초대박 성공!!!] 🎇\n미쳤습니다!! 도파민 대폭발!!!\n";
+    } 
+    // 2) 대성공 (40%) : +4 ~ +8
+    else if (subRoll < 0.50) {
+      upVal = Math.floor(Math.random() * 5) + 4; // 4, 5, 6, 7, 8
+      resultMsg += "🚀 [대성공!!] 🚀\n캬~ 도파민 싹 도노!! 엄청난 기운이 솟구칩니다!\n";
+    } 
+    // 3) 일반 성공 (50%) : +2 ~ +4
+    else {
+      upVal = Math.floor(Math.random() * 3) + 2; // 2, 3, 4
+      resultMsg += "✨ [성공!] ✨\n강화에 성공했습니다! 수치가 훌쩍 오릅니다!\n";
     }
 
+    p.enh = Math.min(60, oldEnh + upVal);
+    if (typeof tryAutoEvolveByEnh === "function") tryAutoEvolveByEnh(p);
+    
+    resultMsg += "━━━━━━━━━━━━━━\n" +
+                 "📈 " + pName + ": +" + oldEnh + "강 ➔ +" + p.enh + "강 (+" + upVal + ")\n\n";
+                 
+    resultMsg += (p.enh >= 60 ? "🌟 [MAX 달성] 🌟" : "👉 남은 도파민강화권: " + u.dopaTicket + "개");
+  } 
+  
+  // 🔴 [실패 구간: 60%]
+  else {
+    var subRoll = Math.random();
+    
+    // 1) 유지 (49%) : 수치 변화 없음
+    if (subRoll < 0.49) {
+      resultMsg += "🛡️ [유지] 🛡️\n휴... 실패했지만 다행히 강화 수치는 보존되었습니다.\n" +
+                   "━━━━━━━━━━━━━━\n" +
+                   "➖ " + pName + ": +" + oldEnh + "강 (변화 없음)\n\n";
+      resultMsg += "👉 남은 도파민강화권: " + u.dopaTicket + "개";
+    } 
+    // 2) 하락 (49%) : -2 ~ -10 하락
+    else if (subRoll < 0.98) {
+      var downVal = Math.floor(Math.random() * 9) + 2; // 2 ~ 10
+      p.enh = Math.max(0, oldEnh - downVal);
+      resultMsg += "📉 [하락] 📉\n아악! 강화에 실패하여 수치가 대폭 하락했습니다...\n" +
+                   "━━━━━━━━━━━━━━\n" +
+                   "😭 " + pName + ": +" + oldEnh + "강 ➔ +" + p.enh + "강 (-" + downVal + ")\n\n";
+      resultMsg += "👉 남은 도파민강화권: " + u.dopaTicket + "개";
+    } 
+    // 3) 파괴 (2%) : 포켓몬 영구 삭제 (데이터 소각)
+    else {
+      resultMsg += "💥 [파괴] 💥\n콰창창창!! 엄청난 굉음과 함께 포켓몬이 산산조각 났습니다!!\n" +
+                   "━━━━━━━━━━━━━━\n" +
+                   "💀 " + pName + "은(는) 형체도 없이 영구 소멸했습니다...\n\n" +
+                   "👉 남은 도파민강화권: " + u.dopaTicket + "개";
+      
+      // 진짜로 계정에서 포켓몬을 삭제하는 극악 무도한 로직
+      var delIdx = -1;
+      for (var i = 0; i < u.pokemons.length; i++) {
+        if (u.pokemons[i].uid === p.uid) { delIdx = i; break; }
+      }
+      if (delIdx !== -1) u.pokemons.splice(delIdx, 1);
+      
+      // 엔트리에 껴있었을 경우 선발대에서도 강제 제거
+      if (u.party) {
+        var pIdx = u.party.indexOf(p.uid);
+        if (pIdx !== -1) u.party.splice(pIdx, 1);
+      }
+    }
+  }
+
+  commitSave(true);
+  replier.reply(resultMsg);
+  return;
+}
 
     if (msg === "/배틀" || msg.indexOf("/배틀 ") === 0) {
       ensureUserStats(u);
