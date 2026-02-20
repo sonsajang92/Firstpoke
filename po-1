@@ -2731,37 +2731,37 @@ function calcHit(attDb, attP, defDb, defP, trainerLvAtt, trainerLvDef) {
   dmg: dmg, 
   mult: base.mult};
 }
-// [최종 수정] 배틀 로그 시뮬레이터 (장비 스피드 반영 + 선공 확정 + 반사 데미지)
+// [최종 수정] 배틀 로그 시뮬레이터 (장비 스피드 반영 + 선공 확정 + 반사 데미지 + 더미 텍스트 함수 제거)
 function simulateBattleLog(aName, aDb, aP, aTLv, bName, bDb, bP, bTLv) {
   // 1. 체력 세팅 (장비 반영)
   var aMax = calcHP(aDb, aP.enh, aP.ivHp || 0, aP.equip);
   var bMax = calcHP(bDb, bP.enh, bP.ivHp || 0, bP.equip);
   var aHP = aMax;
   var bHP = bMax;
+
   // 2. 실전 스피드 계산 (장비 포함)
   function getRealSpd(p) {
-    var s = (p.ivSpd || 0);    // 기본 잠재력
-    // 강화 수치에 따른 스피드 보정 (선택 사항, 여기선 잠재력+장비 위주)
+    var s = (p.ivSpd || 0);    
     if (p.equip && EQUIP_DB[p.equip] && EQUIP_DB[p.equip].type === "spd_flat") {
-      s += EQUIP_DB[p.equip].val;      // 장비빨 추가 (예: 꾸꾸 +35)
+      s += EQUIP_DB[p.equip].val;      
     }
     return s;
   }
   var aSpd = getRealSpd(aP);
   var bSpd = getRealSpd(bP);
-  // 3. 선공 결정 (스피드 높은 쪽이 100% 선공)
+
+  // 3. 선공 결정
   var aTurn = false;
-  if (aSpd > bSpd) 
-    aTurn = true;
-  else if (aSpd < bSpd) 
-    aTurn = false;
-  else 
-    aTurn = (Math.random() < 0.5);  // 동점일 때만 랜덤
+  if (aSpd > bSpd) aTurn = true;
+  else if (aSpd < bSpd) aTurn = false;
+  else aTurn = (Math.random() < 0.5);  
+
   // 4. 표기용 이름 세팅
   var aPokeName = "[" + aName + "] " + getDisplayName(aP);
   var bPokeName = "[" + bName + "] " + getDisplayName(bP);
   var aShort = aPokeName;
   var bShort = bPokeName;
+
   // 5. 로그 헤더 구성 (표기용 공격력 계산)
   function getRealAtkDisplay(db, p) {
     var base = db.basePower;
@@ -2770,32 +2770,34 @@ function simulateBattleLog(aName, aDb, aP, aTLv, bName, bDb, bP, bTLv) {
     var rMul = rarityBattleMul(db.rarity || 2, db.id);
     var sMul = stageBattleMul(db.id).atk;
     var val = base * enhBonus * ivBonus * rMul * sMul;
-    if (p.shiny) 
-      val *= 1.1;
+    if (p.shiny) val *= 1.1;
     if (p.equip && EQUIP_DB[p.equip] && EQUIP_DB[p.equip].type === "atk_pct") {
       val *= (1 + EQUIP_DB[p.equip].val);
     }
     return Math.floor(val);
   }
+  
   var aRealAtk = getRealAtkDisplay(aDb, aP);
   var bRealAtk = getRealAtkDisplay(bDb, bP);
   var aE = (aP.enh > 0) ? ("+" + aP.enh + "강") : "";
   var bE = (bP.enh > 0) ? ("+" + bP.enh + "강") : "";
-  var aLv = "Lv." + (aP.lv || 1);  // ★ 추가
-  var bLv = "Lv." + (bP.lv || 1);  // ★ 추가
+  var aLv = "Lv." + (aP.lv || 1); 
+  var bLv = "Lv." + (bP.lv || 1); 
+
   var logHeader = "";
-  // ⚔️ 석민수: Lv.50 ✨뮤츠 +60강
   logHeader += "⚔️ " + aName + ": " + aLv + " " + getDisplayName(aP) + " " + aE + "\n";
   logHeader += "(HP " + aMax + " / 공 " + aRealAtk + " / ⚡속도 " + aSpd + ")\n";
   logHeader += "🛡️ " + bName + ": " + bLv + " " + getDisplayName(bP) + " " + bE + "\n";
   logHeader += "(HP " + bMax + " / 공 " + bRealAtk + " / ⚡속도 " + bSpd + ")\n\n";
   logHeader += (aTurn ? (aShort + "의 선공! ⚡\n\n") : (bShort + "의 선공! ⚡\n\n"));
+
   // 6. 전투 루프 시작
   var turn = 1;
   var MAX_SAFE_TURNS = 200;
   var turnLogs = [];
   var aCrisisShown = false;
   var bCrisisShown = false;
+
   while (aHP > 0 && bHP > 0 && turn <= MAX_SAFE_TURNS) {
     var attackerName = aTurn ? aShort : bShort;
     var defenderName = aTurn ? bShort : aShort;
@@ -2805,86 +2807,80 @@ function simulateBattleLog(aName, aDb, aP, aTLv, bName, bDb, bP, bTLv) {
     var defP_curr = aTurn ? bP : aP;
     var attLv = aTurn ? aTLv : bTLv;
     var defLv = aTurn ? bTLv : aTLv;
-    // 명중/회피/데미지 계산 (calcHit 내부에서 calcDamage 호출)
+
     var hit = calcHit(attDb, attP_curr, defDb, defP_curr, attLv, defLv);
     var thisTurnStr = "";
+
     if (hit.dodged) {
-      thisTurnStr = turn + "턴) " + attackerName + " 공격! → " + defenderName + " " + funnyDodgeText();
+      thisTurnStr = turn + "턴) " + attackerName + " 공격! → " + defenderName + " 💨 (회피 성공!)";
     } else {
       var finalDmg = hit.dmg;
-      // 희귀도/턴 보정 (전투 흐름 보정)
       var hpRate = (aTurn ? bHP / bMax : aHP / aMax);
       var mod = getRarityBattleModifier(attDb, turn, hpRate);
       finalDmg = Math.floor(finalDmg * mod.atk);
+      
       if (defDb.rarity) {
         var dmod = getRarityBattleModifier(defDb, turn, hpRate);
         finalDmg = Math.floor(finalDmg * dmod.def);
       }
       finalDmg = Math.max(1, finalDmg);
-      // ★ [수정 필요] 0.60 -> 0.30 으로 변경해야 밸런스가 맞습니다!
+
       var reflectDmg = 0;
       if (defP_curr.equip === "김시싱의멘탈") {
-        reflectDmg = Math.floor(finalDmg * 0.30);        // 0.60에서 수정
+        reflectDmg = Math.floor(finalDmg * 0.30);
       }
+
       if (aTurn) {
-        bHP -= finalDmg;        // B(방어자) 피해
-        if (reflectDmg > 0) {
-          aHP -= reflectDmg;          // A(공격자) 반사 피해
-        }
+        bHP -= finalDmg;
+        if (reflectDmg > 0) aHP -= reflectDmg;
       } else {
-        aHP -= finalDmg;        // A(방어자) 피해
-        if (reflectDmg > 0) {
-          bHP -= reflectDmg;          // B(공격자) 반사 피해
-        }
+        aHP -= finalDmg;
+        if (reflectDmg > 0) bHP -= reflectDmg;
       }
-      // 로그 작성
+
       thisTurnStr = turn + "턴) " + attackerName + " 공격! → " + defenderName + " -" + finalDmg;
-      if (hit.crit) 
-        thisTurnStr += " 💥급소!";
-      if (hit.guarded) 
-        thisTurnStr += " 🛡️방어";
+      if (hit.crit) thisTurnStr += " 💥급소!";
+      if (hit.guarded) thisTurnStr += " 🛡️방어";
       thisTurnStr += "\n";
-      // 반사 로그 추가
+      
       if (reflectDmg > 0) {
         thisTurnStr += "✨ [반사] 김시싱의멘탈 발동! " + attackerName + "에게 " + reflectDmg + " 데미지를 돌려줌!\n";
       }
+
       var eff = typeEffectText(hit.mult);
-      if (eff) 
-        thisTurnStr += eff + "\n";
+      if (eff) thisTurnStr += eff + "\n";
       thisTurnStr += "HP: " + Math.max(0, aHP) + " vs " + Math.max(0, bHP);
     }
+
     // 위기 멘트 (HP 20% 이하)
     if (!aCrisisShown && aHP > 0 && aHP <= aMax * 0.2) {
-      thisTurnStr += "\n\n" + crisisText(aShort);
+      thisTurnStr += "\n\n⚠️ " + aShort + " 위기! 체력이 얼마 남지 않았습니다!";
       aCrisisShown = true;
     }
     if (!bCrisisShown && bHP > 0 && bHP <= bMax * 0.2) {
-      thisTurnStr += "\n\n" + crisisText(bShort);
+      thisTurnStr += "\n\n⚠️ " + bShort + " 위기! 체력이 얼마 남지 않았습니다!";
       bCrisisShown = true;
     }
+
     turnLogs.push(thisTurnStr);
-    // 턴 교체
     aTurn = !aTurn;
     turn++;
   }
-  // 승패 판정
+
+  // 7. 승패 판정
   var winner = "draw";
-  if (aHP <= 0 && bHP <= 0) 
-    winner = "draw";  // 러브샷(반사뎀 등)
-  else if (bHP <= 0) 
-    winner = "A";
-  else if (aHP <= 0) 
-    winner = "B";
+  if (aHP <= 0 && bHP <= 0) winner = "draw"; 
+  else if (bHP <= 0) winner = "A";
+  else if (aHP <= 0) winner = "B";
   else {
-    // 턴 초과 시 HP 많은 쪽 승리
-    if (aHP > bHP) 
-      winner = "A";
-    else if (bHP > aHP) 
-      winner = "B";
+    if (aHP > bHP) winner = "A";
+    else if (bHP > aHP) winner = "B";
   }
+
   var finalLogBody = "";
   var SHOW_HEAD = 10;
   var SHOW_TAIL = 4;
+
   if (turnLogs.length <= (SHOW_HEAD + SHOW_TAIL + 2)) {
     finalLogBody = turnLogs.join("\n\n");
   } else {
@@ -2892,12 +2888,11 @@ function simulateBattleLog(aName, aDb, aP, aTLv, bName, bDb, bP, bTLv) {
     var tailLog = turnLogs.slice(turnLogs.length - SHOW_TAIL).join("\n\n");
     finalLogBody = headLog + "\n\n...\n⚔️ (치열한 공방이 이어집니다...)\n...\n\n" + tailLog;
   }
+
   var fullLog = logHeader + finalLogBody + "\n";
   var resultLine = (winner === "A") ? ("결과: " + aName + " 승리!") : (winner === "B") ? ("결과: " + bName + " 승리!") : "결과: 무승부!";
-  return {
-  winner: winner, 
-  log: fullLog, 
-  resultLine: resultLine};
+  
+  return { winner: winner, log: fullLog, resultLine: resultLine };
 }
 function battleRewardLine(gold, exp) {
   return "🎁 보상: +" + gold + "💰 / +" + exp + "EXP";
