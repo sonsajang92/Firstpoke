@@ -5457,47 +5457,48 @@ function endRaidBoss(d, isClear) {
   var totalDamage = 0;
   for (var name in boss.logs) {
     var dmg = boss.logs[name];
-    list.push({
-  name: name, 
-  dmg: dmg});
+    list.push({ name: name, dmg: dmg });
     totalDamage += dmg;
   }
   // 딜량 내림차순 정렬
   list.sort(function(a, b) {
-  return b.dmg - a.dmg;
-});
+    return b.dmg - a.dmg;
+  });
   // --- 2. 금고(Pool) 계산 ---
   var totalPool = boss.rewardPool || 0;  // 현재 모인 돈
-  // ★ [성공 보너스] 토벌 성공 시 1000개 추가!
+  
+  // 🌟 [수정 포인트 1] 토벌 성공 보너스 대폭 상향 (1,000 -> 10,000)
   if (isClear) {
-    totalPool += 1000;
+    totalPool += 10000;
   }
   var participantCount = list.length;
-  // 기본 지급 (참가상 3개)
-  var basicReward = 3;
+  
+  // 🌟 [수정 포인트 2] 기본 지급 참가상 상향 (3 -> 100)
+  var basicReward = 100;
   var usedForBasic = participantCount * basicReward;
   // 성과급 재원 (금고 - 참가상)
   var performancePool = Math.max(0, totalPool - usedForBasic);
+  
   // --- 3. 분배 로직 ---
   for (var i = 0; i < list.length; i++) {
     var r = list[i];
     var u = d.users[r.name];
-    if (!u) 
-      continue;
+    if (!u) continue;
     var share = (totalDamage > 0) ? (r.dmg / totalDamage) : 0;
     var bonusCoin = Math.floor(performancePool * share);
     var finalCoin = basicReward + bonusCoin;
     var lastHitMsg = "";
-    // ★ 막타 보너스는 성공했을 때만 지급
+    
+    // 🌟 [수정 포인트 3] 막타 보너스 상향 (300 -> 2,000)
     if (isClear && boss.lastHitter === r.name) {
-      finalCoin += 300;
-      lastHitMsg = " (막타+300)";
+      finalCoin += 2000;
+      lastHitMsg = " (막타+2000)";
     }
     u.dakotaCoin = (u.dakotaCoin || 0) + finalCoin;
-    // 랭킹 로그 (상위 5명) - ★ [수정] 정확한 딜량 표시 추가
+    
+    // 랭킹 로그 (상위 5명)
     if (i < 5) {
       var percent = Math.floor(share * 100);
-      // 예: 1위 손사장 (15,000,000딜 / 61%) ➔ ...
       rankMsg += (i + 1) + "위 " + r.name + " (딜량 : " + fmtNum(r.dmg) + " / " + percent + "%) ➔ +" + fmtNum(finalCoin) + "🪙" + lastHitMsg + "\n";
     }
   }
@@ -5505,12 +5506,12 @@ function endRaidBoss(d, isClear) {
   var subTitle = "";
   if (isClear) {
     title = "🎉 레이드 토벌 성공! 🎉";
-    subTitle = "💰 성공 보너스 +1,000코인 포함 분배 완료!";
+    subTitle = "💰 성공 보너스 +10,000코인 포함 분배 완료!";
   } else {
     title = "💀 제한 시간 종료... 토벌 실패";
     subTitle = "⚠️ 보스는 놓쳤지만, 적립된 코인은 정산하여 지급됩니다.";
   }
-  // ★ [수정] 보스 총 체력 정보 추가
+  
   var resultMsg = title + "\n\n" + subTitle + "\n" + "👹 총 체력: " + fmtNum(boss.maxHp) + "\n" + "💰 총 분배 코인: " + fmtNum(totalPool) + "개\n" + "👥 참여자: " + participantCount + "명\n" + "━━━━━━━━━━━━━━\n" + "[🏅 명예의 전당 & 정산 결과]\n" + rankMsg;
   d.worldBoss = null;  // 보스 삭제
   return resultMsg;
@@ -5528,6 +5529,7 @@ function getRaidPower(u) {
     return totalPower;
 }
 
+// 레이드 공격 실행 함수
 function executeRaidAttack(d, room, sender, u, replier, decoName, finisherReady) {
   var b = d.worldBoss;
   if (!b || !b.active || b.endTime <= new Date().getTime()) {
@@ -5563,7 +5565,7 @@ function executeRaidAttack(d, room, sender, u, replier, decoName, finisherReady)
   } 
   else if (equipType === "raid_crit_dmg") {
     critMult = equipVal; 
-    itemMsg = " (??해리의 매운맛!)";
+    itemMsg = " (🌶️해리의 매운맛!)"; // 특수문자 깨짐 방지
   }
 
   var isCrit = Math.random() < critChance;
@@ -5586,8 +5588,9 @@ function executeRaidAttack(d, room, sender, u, replier, decoName, finisherReady)
   if (!b.logs[sender]) b.logs[sender] = 0;
   b.logs[sender] += dmg;
 
-  var dropCoin = 1 + Math.floor(dmg / 75000);
-  dropCoin = Math.min(1000, dropCoin);
+  // 🌟 [수정 완료된 부분] 적립률 대폭 상향: 25,000 데미지당 1코인 적립 (기본 5코인 보장, 최대 5000코인 제한)
+  var dropCoin = 5 + Math.floor(dmg / 25000); 
+  dropCoin = Math.min(5000, dropCoin); 
   if (finisherReady) dropCoin *= 2;
   b.rewardPool = (b.rewardPool || 0) + dropCoin;
 
@@ -5612,7 +5615,6 @@ function executeRaidAttack(d, room, sender, u, replier, decoName, finisherReady)
   commitSave(true);
   replier.reply("⚔️ [레이드] " + decoName + "님의 총공격!\n━━━━━━━━━━━━━━\n" + hitIcon + " " + hitTag + ": " + b.name + "에게 -" + fmtNum(dmg) + " 피해!\n💰 금고 적립: +" + dropCoin + "코인" + injureMsg);
 }
-
 // -------------------- 메인 응답 --------------------
 function response(room, msg, sender, isGroupChat, replier, imageDB) {
   try {
