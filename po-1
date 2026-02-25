@@ -6784,14 +6784,44 @@ if (msg.indexOf("/사용") === 0) {
                 "냠냠! 달콤한 푸딩 " + realQty + "개를 먹고 " + pName + "이(가) 행복해합니다!\n" +
                 "➔ 친밀도: " + oldFrPudding + "p ➔ " + p.friendship + "p";
 
-  } else if (itemKey === "황금열매") {
+ } else if (itemKey === "황금열매") {
+    if (amount > 1) {
+      replier.reply("🚫 황금열매는 포켓몬의 스탯을 최대로 만들어주므로 한 번에 1개씩만 사용 가능합니다.");
+      return;
+    }
     var oldFr = p.friendship || 0;
-    var upFr = amount * 10;
-    p.friendship = Math.min(255, oldFr + upFr);
-    u.items[itemKey] -= amount;
-    resultLog = "❤️ [유대감 대폭 상승!]\n" + 
-                pName + "이(가) 전설의 열매를 먹고 " + sender + "님을 더욱 따릅니다!\n" +
-                "➔ 친밀도: " + oldFr + "p ➔ " + p.friendship + "p";
+
+    // 이미 올-맥스 S등급 + 친밀도 MAX인지 확인 (오사용 방지)
+    if (p.grade === "S" && p.ivStr === 15 && p.ivHp === 150 && p.ivSpd === 15 && oldFr >= 255) {
+      replier.reply("🚫 이미 모든 잠재력(IV)과 친밀도가 MAX인 완벽한 포켓몬입니다!");
+      return;
+    }
+
+    var oldGrade = p.grade || "D";
+    var oldStr = p.ivStr || 0;
+    var oldHp = Math.floor((p.ivHp || 0) / 10);
+    var oldSpd = p.ivSpd || 0;
+
+    // 🌟 [핵심] 등급 S, 개체값 MAX 확정 및 친밀도 MAX 달성
+    p.grade = "S";
+    p.ivStr = 15;
+    p.ivHp = 150;
+    p.ivSpd = 15;
+    p.friendship = 255; // 친밀도 무조건 최대치(255)
+    
+    u.items[itemKey] -= 1; // 1개 소모
+    
+    // 도감에 S등급 최고 기록 갱신 (누락 방지)
+    if (typeof dexCaught === "function") dexCaught(u, p.pid, p.grade);
+
+    resultLog = "🏆 [완벽한 각성!]\n" + 
+                pName + "이(가) 황금열매를 먹고 모든 잠재력을 개방하며 " + sender + "님을 평생 따르기로 맹세합니다!\n" + 
+                "➔ 잠재력 등급: [" + oldGrade + "] 📈 【 S 】\n\n" + 
+                "[능력치 MAX 달성]\n" +
+                "💪 힘 : " + oldStr + " ➔ 15\n" + 
+                "❤️ 체 : " + oldHp + " ➔ 15\n" + 
+                "⚡ 민 : " + oldSpd + " ➔ 15\n" + 
+                "❤️ 친밀도: " + oldFr + "p ➔ MAX(255p)";
 
   } else if (itemKey === "도파민강화권") {
     var oldEnhDopa = p.enh || 0;
