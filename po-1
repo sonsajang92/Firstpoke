@@ -8317,39 +8317,68 @@ if (msg.indexOf("/탐험") === 0) {
     var trainerExpGain = Math.floor(pExpGain * 0.3);
     var userLvMsg = addExpWithLevelUpMsg(u, trainerExpGain);
 
-    // 아이템 루팅 로직 (사장님 원본 유지)
-    var itemLog = "";
-    var lootCount = Math.max(3, Math.min(8, 3 + (pEx.grade === 'S' ? 2 : 0) + randInt(-1, 1)));
-    for (var i = 0; i < lootCount; i++) {
-      var rVal = Math.random();
-      if (rVal < 0.05) { u.reroll = (u.reroll || 0) + 1; itemLog += "🔄 티어리셋권 +1\n"; }
-      else if (rVal < 0.12) { u.cookie = (u.cookie || 0) + 1; itemLog += "🍪 두쫀쿠 +1\n"; }
-      else if (rVal < 0.25) { u.dopaTicket = (u.dopaTicket || 0) + 1; itemLog += "💳 도파민강화권 +1\n"; }
-      else if (rVal < 0.40) { u.ticket = (u.ticket || 0) + 1; itemLog += "🎫 이동티켓 +1\n"; }
-      else if (rVal < 0.60) { u.ultraBall = (u.ultraBall || 0) + randInt(1, 3); itemLog += "⚫ 하이퍼볼 보급\n"; }
-      else if (rVal < 0.80) { u.superBall = (u.superBall || 0) + randInt(3, 7); itemLog += "🔵 슈퍼볼 보급\n"; }
-      else { u.ball = (u.ball || 0) + randInt(5, 15); itemLog += "🔴 몬스터볼 보급\n"; }
-    }
-
-    var routeSummary = "📍 [탐험 루트 정산]\n➔ " + (u.exploration.routes ? u.exploration.routes[0] : "일반 지역") + " 외 " + (u.exploration.routes ? u.exploration.routes.length - 1 : 0) + "곳 조사\n";
-    if (isJackpot) routeSummary += "🎰 [JACKPOT] 숨겨진 성역(냥치/다코타) 발견!\n";
-
-    var resultMsg = "🎉 " + decoName + "님의 " + pName + " 탐험 복귀!\n" +
-                    "━━━━━━━━━━━━━━\n" +
-                    routeSummary + "\n" +
-                    "💰 획득 골드: +" + fmtNum(finalGold) + "💰\n" +
-                    "✨ 경험치: Poké +" + fmtNum(pExpGain) + " / Trainer +" + fmtNum(trainerExpGain) + "\n\n" +
-                    "🎁 [획득 전리품]\n" + (itemLog || "아이템 없음\n") + "\n" +
-                    "💪 [성장 보고]\n" + (pLvMsg || "(경험치 획득)") + "\n" +
-                    (userLvMsg ? (userLvMsg + "\n") : "") +
-                    "━━━━━━━━━━━━━━\n" + "수고했어! 푹 쉬렴.";
-
-    delete u.exploration;
-    commitSave(true);
-    if (typeof checkAndNotifyTitles === "function") checkAndNotifyTitles(u, replier);
-    replier.reply(resultMsg); 
-    return;
+// 🌟 [수정 포인트 1] 아이템 루팅 로직 (수합 처리로 RPG스럽게 변경)
+  var lootCount = Math.max(3, Math.min(8, 3 + (pEx.grade === 'S' ? 2 : 0) + randInt(-1, 1)));
+  var loots = {}; // 중복 획득 아이템 합산을 위한 객체
+  
+  for (var i = 0; i < lootCount; i++) {
+    var rVal = Math.random();
+    if (rVal < 0.05) { u.reroll = (u.reroll || 0) + 1; loots["🔄 티어리셋권"] = (loots["🔄 티어리셋권"] || 0) + 1; }
+    else if (rVal < 0.12) { u.cookie = (u.cookie || 0) + 1; loots["🍪 두쫀쿠"] = (loots["🍪 두쫀쿠"] || 0) + 1; }
+    else if (rVal < 0.25) { u.dopaTicket = (u.dopaTicket || 0) + 1; loots["💳 도파민강화권"] = (loots["💳 도파민강화권"] || 0) + 1; }
+    else if (rVal < 0.40) { u.ticket = (u.ticket || 0) + 1; loots["🎫 이동티켓"] = (loots["🎫 이동티켓"] || 0) + 1; }
+    else if (rVal < 0.60) { var amt = randInt(1, 3); u.ultraBall = (u.ultraBall || 0) + amt; loots["⚫ 하이퍼볼"] = (loots["⚫ 하이퍼볼"] || 0) + amt; }
+    else if (rVal < 0.80) { var amt = randInt(3, 7); u.superBall = (u.superBall || 0) + amt; loots["🔵 슈퍼볼"] = (loots["🔵 슈퍼볼"] || 0) + amt; }
+    else { var amt = randInt(5, 15); u.ball = (u.ball || 0) + amt; loots["🔴 몬스터볼"] = (loots["🔴 몬스터볼"] || 0) + amt; }
   }
+
+  // 아이템 합산 텍스트 생성
+  var itemLogArr = [];
+  for (var k in loots) {
+    itemLogArr.push(" └ " + k + " x" + loots[k]);
+  }
+  var itemLog = itemLogArr.length > 0 ? itemLogArr.join("\n") : " └ 획득한 전리품이 없습니다.";
+
+  // 🌟 [수정 포인트 2] 탐험 루트 정산 변경 (A ➔ B ➔ C)
+  var routeSummary = "📍 [탐험 루트 정산]\n";
+  if (u.exploration.routes && u.exploration.routes.length > 0) {
+    routeSummary += "🚩 " + u.exploration.routes.join(" ➔ ") + "\n";
+  } else {
+    routeSummary += "🚩 알 수 없는 지역 탐색\n";
+  }
+  if (isJackpot) routeSummary += "🎰 [JACKPOT] 전설의 기운이 서린 숨겨진 성역 발견!\n";
+
+  // 🌟 [수정 포인트 3] 성장 보고 문구 개편
+  var growthLog = "";
+  if (pLvMsg) {
+    growthLog += pLvMsg + "\n";
+  } else {
+    growthLog += "🔹 " + pName + " : 고된 탐험으로 실전 감각이 올랐다! (경험치 획득)\n";
+  }
+  if (userLvMsg) {
+    growthLog += userLvMsg + "\n";
+  }
+
+  // 🌟 [최종 메시지 조립]
+  var resultMsg = "🎉 " + decoName + "님의 탐험대가 무사히 복귀했습니다!\n" +
+  "━━━━━━━━━━━━━━\n" +
+  routeSummary + "\n" +
+  "💰 획득 재화\n" +
+  " └ 골드: +" + fmtNum(finalGold) + "💰\n" +
+  " └ 경험치: Poké +" + fmtNum(pExpGain) + " / Trainer +" + fmtNum(trainerExpGain) + "\n\n" +
+  "🎁 [전리품 결산]\n" +
+  itemLog + "\n\n" +
+  "💪 [성장 보고서]\n" +
+  growthLog +
+  "━━━━━━━━━━━━━━\n" +
+  "⛺ 포켓몬이 캠프에서 휴식을 취합니다.";
+  
+  delete u.exploration;
+  commitSave(true);
+  if (typeof checkAndNotifyTitles === "function") checkAndNotifyTitles(u, replier);
+  replier.reply(resultMsg);
+  return;
+}
 
   // -----------------------------------------------------------
   // [B] 탐험 떠나기 로직 (별명 및 UID 지능형 검색 지원)
